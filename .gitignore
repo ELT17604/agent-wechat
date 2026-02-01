@@ -25,6 +25,7 @@ docker/shared/
 
 *.log
 .DS_Store
+screenshot.png
 
 # Environment files with secrets
 .env

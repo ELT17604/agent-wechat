@@ -1,0 +1,21 @@
+#!/bin/bash
+# Press key combination
+# Usage: wechat-key <combo>
+# Examples:
+#   wechat-key Return
+#   wechat-key ctrl+a
+#   wechat-key alt+F4
+#   wechat-key shift+Tab
+
+set -euo pipefail
+
+if [ -z "${1:-}" ]; then
+  echo "Usage: wechat-key <combo>" >&2
+  echo "Examples: Return, ctrl+a, alt+F4, shift+Tab" >&2
+  exit 1
+fi
+
+COMBO="$1"
+
+xdotool key "$COMBO"
+echo "pressed: $COMBO"

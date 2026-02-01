@@ -1,0 +1,110 @@
+#!/bin/bash
+# Upsert message (insert or update)
+# Usage: db-upsert-message --id <id> --chat-id <chat_id> --type <type> [--text "..."] [--sender "..."] [--outgoing] [--time-display "..."] [--time-parsed "..."] [--before "..."] [--after "..."]
+
+set -euo pipefail
+
+DB_PATH="${AGENT_DB_PATH:-/data/agent.db}"
+
+ID=""
+CHAT_ID=""
+CONTENT_TYPE=""
+CONTENT_TEXT=""
+SENDER_NAME=""
+IS_OUTGOING="0"
+TIME_DISPLAY=""
+TIME_PARSED=""
+ADJ_BEFORE=""
+ADJ_AFTER=""
+METADATA=""
+
+escape_sql() {
+  echo "${1//\'/\'\'}"
+}
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --id)
+      ID="$2"
+      shift 2
+      ;;
+    --chat-id)
+      CHAT_ID="$2"
+      shift 2
+      ;;
+    --type)
+      CONTENT_TYPE="$2"
+      shift 2
+      ;;
+    --text)
+      CONTENT_TEXT="$2"
+      shift 2
+      ;;
+    --sender)
+      SENDER_NAME="$2"
+      shift 2
+      ;;
+    --outgoing)
+      IS_OUTGOING="1"
+      shift
+      ;;
+    --time-display)
+      TIME_DISPLAY="$2"
+      shift 2
+      ;;
+    --time-parsed)
+      TIME_PARSED="$2"
+      shift 2
+      ;;
+    --before)
+      ADJ_BEFORE="$2"
+      shift 2
+      ;;
+    --after)
+      ADJ_AFTER="$2"
+      shift 2
+      ;;
+    --metadata)
+      METADATA="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$ID" ] || [ -z "$CHAT_ID" ] || [ -z "$CONTENT_TYPE" ]; then
+  echo '{"error": "missing required --id, --chat-id, and --type parameters"}' >&2
+  exit 1
+fi
+
+ID_ESC=$(escape_sql "$ID")
+CHAT_ID_ESC=$(escape_sql "$CHAT_ID")
+TYPE_ESC=$(escape_sql "$CONTENT_TYPE")
+TEXT_ESC=$(escape_sql "$CONTENT_TEXT")
+SENDER_ESC=$(escape_sql "$SENDER_NAME")
+TD_ESC=$(escape_sql "$TIME_DISPLAY")
+TP_ESC=$(escape_sql "$TIME_PARSED")
+BEFORE_ESC=$(escape_sql "$ADJ_BEFORE")
+AFTER_ESC=$(escape_sql "$ADJ_AFTER")
+META_ESC=$(escape_sql "$METADATA")
+
+sqlite3 "$DB_PATH" <<EOF
+INSERT INTO messages (id, chat_id, content_type, content_text, sender_name, is_outgoing, timestamp_display, timestamp_parsed, adjacent_text_before, adjacent_text_after, metadata, updated_at)
+VALUES ('$ID_ESC', '$CHAT_ID_ESC', '$TYPE_ESC', NULLIF('$TEXT_ESC', ''), NULLIF('$SENDER_ESC', ''), $IS_OUTGOING, NULLIF('$TD_ESC', ''), NULLIF('$TP_ESC', ''), NULLIF('$BEFORE_ESC', ''), NULLIF('$AFTER_ESC', ''), NULLIF('$META_ESC', ''), datetime('now'))
+ON CONFLICT(id) DO UPDATE SET
+  content_type = excluded.content_type,
+  content_text = COALESCE(excluded.content_text, messages.content_text),
+  sender_name = COALESCE(excluded.sender_name, messages.sender_name),
+  is_outgoing = excluded.is_outgoing,
+  timestamp_display = COALESCE(excluded.timestamp_display, messages.timestamp_display),
+  timestamp_parsed = COALESCE(excluded.timestamp_parsed, messages.timestamp_parsed),
+  adjacent_text_before = COALESCE(excluded.adjacent_text_before, messages.adjacent_text_before),
+  adjacent_text_after = COALESCE(excluded.adjacent_text_after, messages.adjacent_text_after),
+  metadata = COALESCE(excluded.metadata, messages.metadata),
+  updated_at = datetime('now');
+EOF
+
+# Return the updated message
+db-get-message --id "$ID"

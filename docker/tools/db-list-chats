@@ -1,0 +1,33 @@
+#!/bin/bash
+# List chats from database
+# Usage: db-list-chats [--limit N] [--unread-only]
+
+set -euo pipefail
+
+DB_PATH="${AGENT_DB_PATH:-/data/agent.db}"
+LIMIT=50
+UNREAD_ONLY=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --limit)
+      LIMIT="$2"
+      shift 2
+      ;;
+    --unread-only)
+      UNREAD_ONLY=true
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ "$UNREAD_ONLY" = true ]; then
+  sqlite3 -json "$DB_PATH" \
+    "SELECT * FROM chats WHERE unread_count > 0 ORDER BY last_activity_at DESC LIMIT $LIMIT"
+else
+  sqlite3 -json "$DB_PATH" \
+    "SELECT * FROM chats ORDER BY last_activity_at DESC LIMIT $LIMIT"
+fi

@@ -1,0 +1,30 @@
+#!/bin/bash
+# Run accessibility dump with optional scope
+# Usage: wechat-a11y [--scope chats|messages|buttons|full|desktop] [--probe]
+
+set -euo pipefail
+
+SCOPE="full"
+PROBE=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --scope)
+      SCOPE="$2"
+      shift 2
+      ;;
+    --probe)
+      PROBE=true
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ "$PROBE" = true ]; then
+  python3 /opt/tools/wechat-a11y-dump --probe --format json
+else
+  python3 /opt/tools/wechat-a11y-dump --scope "$SCOPE" --format json
+fi

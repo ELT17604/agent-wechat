@@ -1,0 +1,27 @@
+#!/bin/bash
+# Type text using clipboard paste (Unicode-safe)
+# This works for CJK characters, emoji, and any Unicode text
+# Usage: wechat-type "<text>"
+
+set -euo pipefail
+
+if [ -z "${1:-}" ]; then
+  echo "Usage: wechat-type \"<text>\"" >&2
+  exit 1
+fi
+
+TEXT="$1"
+
+# Copy to clipboard using xclip
+echo -n "$TEXT" | xclip -selection clipboard
+
+# Small delay for clipboard to be ready
+sleep 0.05
+
+# Paste using Ctrl+V
+xdotool key ctrl+v
+
+# Small delay after paste
+sleep 0.05
+
+echo "typed: $TEXT"

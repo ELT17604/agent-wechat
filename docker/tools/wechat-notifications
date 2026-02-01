@@ -1,0 +1,29 @@
+#!/bin/bash
+# Read pending desktop notifications
+# Usage: wechat-notifications
+# Returns JSON array of recent notifications
+
+set -euo pipefail
+
+NOTIFICATION_LOG="${NOTIFICATION_LOG:-/tmp/notification_log.json}"
+
+# If notification log exists, output it
+if [ -f "$NOTIFICATION_LOG" ]; then
+  cat "$NOTIFICATION_LOG"
+else
+  # No notifications logged yet
+  echo "[]"
+fi
+
+# Note: This is a stub implementation.
+# In production, notifications would be captured by:
+# 1. A notification daemon like dunst with a script hook
+# 2. dbus-monitor listening to org.freedesktop.Notifications
+# 3. A custom notification listener service
+#
+# Example dunst configuration (dunstrc):
+# [wechat]
+#     appname = WeChat
+#     script = /opt/tools/log-notification
+#
+# The log-notification script would append to NOTIFICATION_LOG

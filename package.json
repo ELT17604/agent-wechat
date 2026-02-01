@@ -1,0 +1,24 @@
+{
+  "name": "agent-wechat",
+  "version": "0.1.0",
+  "description": "WeChat automation agent with LLM-powered UI control",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "build:watch": "turbo watch build",
+    "typecheck": "turbo run typecheck",
+    "build:image:local": "bash scripts/build-images-local.sh",
+    "build:image:arm64": "bash scripts/build-images-local.sh --arch arm64",
+    "build:image:amd64": "bash scripts/build-images-local.sh --arch amd64",
+    "cli": "node packages/cli/dist/cli.js"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

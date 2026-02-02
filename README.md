@@ -61,9 +61,17 @@ See [CLAUDE.md](./CLAUDE.md) for technical details.
 # Build all packages
 pnpm build
 
+# Start in dev mode (mounts local dist for hot reload)
+pnpm dev
+
+# In another terminal, watch for changes
+pnpm build:watch
+
 # Type check
 pnpm typecheck
 ```
+
+Dev mode exposes port 9229 for Node.js debugging.
 
 ## Ports
 

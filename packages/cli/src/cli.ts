@@ -13,7 +13,6 @@ const VERSION = "0.1.0";
 const CONTAINER_NAME = "agent-wechat";
 const DEFAULT_PORT = 6174;
 const VNC_PORT = 5900;
-const DEBUG_PORT = 9229;
 
 // Get monorepo root (cli is at packages/cli)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,13 +67,8 @@ function getClient(): Client {
 
 program
   .command("up")
-  .description("Start the WeChat container (production mode)")
+  .description("Start the WeChat container")
   .action(cmdUp);
-
-program
-  .command("dev")
-  .description("Start in dev mode (hot reload + debugging)")
-  .action(cmdDev);
 
 program
   .command("down")
@@ -513,92 +507,6 @@ async function cmdUp() {
     console.log("\nServer did not become ready in time. Check logs with: pnpm cli logs");
   } catch (error) {
     console.error("Failed to start container:", error);
-    process.exit(1);
-  }
-}
-
-async function cmdDev() {
-  const image = getImageTag();
-
-  // Stop any existing container first
-  try {
-    execSync(`docker stop ${CONTAINER_NAME}`, { stdio: "ignore" });
-    execSync(`docker rm ${CONTAINER_NAME}`, { stdio: "ignore" });
-  } catch {
-    // Container doesn't exist, that's fine
-  }
-
-  // Check if image exists
-  try {
-    execSync(`docker image inspect ${image}`, { stdio: "ignore" });
-  } catch {
-    console.error(`Image ${image} not found.`);
-    console.error(`Run 'pnpm build:image:local' first to build the image.`);
-    process.exit(1);
-  }
-
-  // Check if dist folders exist
-  const agentServerDist = path.join(MONOREPO_ROOT, "packages/agent-server/dist");
-  const sharedDist = path.join(MONOREPO_ROOT, "packages/shared/dist");
-
-  try {
-    execSync(`test -d "${agentServerDist}"`, { stdio: "ignore" });
-    execSync(`test -d "${sharedDist}"`, { stdio: "ignore" });
-  } catch {
-    console.error("dist/ folders not found. Run 'pnpm build' first.");
-    process.exit(1);
-  }
-
-  const dockerToolsDir = path.join(MONOREPO_ROOT, "docker/tools");
-
-  console.log(`Starting container ${CONTAINER_NAME} in dev mode...`);
-  console.log(`  Mounting: ${agentServerDist}`);
-  console.log(`  Mounting: ${sharedDist}`);
-  console.log(`  Mounting: ${dockerToolsDir}`);
-
-  const dockerArgs = [
-    "run", "-d",
-    "--name", CONTAINER_NAME,
-    "--security-opt", "seccomp=unconfined",
-    "-p", `${DEFAULT_PORT}:${DEFAULT_PORT}`,
-    "-p", `${VNC_PORT}:${VNC_PORT}`,
-    "-p", `${DEBUG_PORT}:${DEBUG_PORT}`,
-    "-v", `${CONTAINER_NAME}-data:/data`,
-    "-v", `${agentServerDist}:/opt/agent-server/dist`,
-    "-v", `${sharedDist}:/opt/shared/dist`,
-    "-v", `${dockerToolsDir}:/opt/tools`,
-    "-e", `NODE_OPTIONS=--inspect=0.0.0.0:${DEBUG_PORT}`,
-    "-e", "DEV_MODE=1",
-    image,
-  ];
-
-  try {
-    execSync(`docker ${dockerArgs.join(" ")}`, { stdio: "inherit" });
-    console.log(`\nDev container started!`);
-    console.log(`  API: http://localhost:${DEFAULT_PORT}`);
-    console.log(`  VNC: localhost:${VNC_PORT}`);
-    console.log(`  Debug: localhost:${DEBUG_PORT}`);
-    console.log(`\nWaiting for server to be ready...`);
-
-    for (let i = 0; i < 30; i++) {
-      try {
-        const response = await fetch(`http://localhost:${DEFAULT_PORT}/health`);
-        if (response.ok) {
-          console.log("Server is ready!");
-          console.log(`\nDev mode active:`);
-          console.log(`  - Run 'pnpm build:watch' for hot reload`);
-          console.log(`  - Attach VS Code debugger to port ${DEBUG_PORT}`);
-          return;
-        }
-      } catch {
-        // Not ready yet
-      }
-      await new Promise(r => setTimeout(r, 1000));
-      process.stdout.write(".");
-    }
-    console.log("\nServer did not become ready in time. Check logs with: pnpm cli logs");
-  } catch (error) {
-    console.error("Failed to start dev container:", error);
     process.exit(1);
   }
 }

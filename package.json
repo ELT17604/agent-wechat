@@ -11,7 +11,8 @@
     "build:image:local": "bash scripts/build-images-local.sh",
     "build:image:arm64": "bash scripts/build-images-local.sh --arch arm64",
     "build:image:amd64": "bash scripts/build-images-local.sh --arch amd64",
-    "cli": "node packages/cli/dist/cli.js"
+    "cli": "node packages/cli/dist/cli.js",
+    "dev": "bash scripts/dev.sh"
   },
   "devDependencies": {
     "turbo": "^2.4.4",

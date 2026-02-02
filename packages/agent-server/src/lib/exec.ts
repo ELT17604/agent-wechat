@@ -14,7 +14,6 @@ export interface ExecOptions {
 
 /**
  * Execute a command with fixed arguments (no shell interpolation)
- * This is used internally by lib/ functions, NOT exposed to LLM
  *
  * If a session is provided, the command runs with that session's
  * DISPLAY and DBUS_SESSION_BUS_ADDRESS environment.

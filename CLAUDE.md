@@ -196,7 +196,6 @@ pnpm build:image:amd64        # Build Docker image (Intel)
 
 ## Environment Variables
 
-- `GOOGLE_GENERATIVE_AI_API_KEY` - Required for LLM features (chat listing, etc.)
 - `AGENT_WECHAT_URL` - Override server URL (default: http://localhost:6174)
 
 ## Key Design Decisions
@@ -231,6 +230,6 @@ pnpm build:image:amd64        # Build Docker image (Intel)
 - [x] Deterministic FSM for login flow
 - [x] Effect watchers for QR/phone_confirm/login_success
 - [x] Context persistence to SQLite
-- [ ] LLM agent for chat listing (partially implemented)
-- [ ] Send message flow via FSM
+- [ ] Chat listing via FSM plan
+- [ ] Send message via FSM plan
 - [ ] File sending

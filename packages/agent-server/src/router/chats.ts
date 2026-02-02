@@ -6,27 +6,17 @@ import {
   getChatParamsSchema,
   openChatParamsSchema,
 } from "@thisnick/agent-wechat-shared";
-import { runListChatsAgent, runFindChatAgent, runOpenChatAgent } from "../agent/index.js";
-import { getChatsFromDb, getChatFromDb } from "../db/queries.js";
+import { getChatsFromDb, getChatFromDb, findChatsByName } from "../db/queries.js";
 import type { Chat } from "@thisnick/agent-wechat-shared";
 
 export const chatsRouter = router({
   /**
-   * List all chats (from database, synced via agent)
+   * List all chats from database
    */
   list: publicProcedure
     .input(listChatsParamsSchema)
     .query(async ({ input, ctx }): Promise<Chat[]> => {
-      // First try to get from database
-      const dbChats = getChatsFromDb(ctx.db, input.limit, input.unreadOnly);
-
-      // If database is empty, run agent to sync
-      if (dbChats.length === 0) {
-        await runListChatsAgent();
-        return getChatsFromDb(ctx.db, input.limit, input.unreadOnly);
-      }
-
-      return dbChats;
+      return getChatsFromDb(ctx.db, input.limit, input.unreadOnly);
     }),
 
   /**
@@ -39,40 +29,29 @@ export const chatsRouter = router({
     }),
 
   /**
-   * Find chats by name (uses agent if not in database)
+   * Find chats by name
    */
   find: publicProcedure
     .input(findChatParamsSchema)
     .query(async ({ input, ctx }): Promise<Chat[]> => {
-      // First check database
-      const dbResult = await import("../db/queries.js").then((m) =>
-        m.findChatsByName(ctx.db, input.name)
-      );
-
-      if (dbResult.length > 0) {
-        return dbResult;
-      }
-
-      // If not found, use agent to search
-      const agentResult = await runFindChatAgent(input.name);
-      return agentResult;
+      return findChatsByName(ctx.db, input.name);
     }),
 
   /**
-   * Open a chat (navigate to it in WeChat)
+   * Open a chat - TODO: implement via FSM plan
    */
   open: publicProcedure
     .input(openChatParamsSchema)
     .mutation(async ({ input }): Promise<{ success: boolean }> => {
-      const result = await runOpenChatAgent(input.id);
-      return { success: result.success };
+      // TODO: Implement via openChatPlan
+      throw new Error("Not implemented - use FSM plan");
     }),
 
   /**
-   * Sync chats from WeChat UI to database
+   * Sync chats - TODO: implement via FSM plan
    */
   sync: publicProcedure.mutation(async (): Promise<{ count: number }> => {
-    const chats = await runListChatsAgent();
-    return { count: chats.length };
+    // TODO: Implement via listChatsPlan
+    throw new Error("Not implemented - use FSM plan");
   }),
 });

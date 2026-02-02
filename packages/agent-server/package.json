@@ -22,10 +22,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/google": "^3.0.19",
     "@thisnick/agent-wechat-shared": "workspace:*",
     "@trpc/server": "^11.0.0",
-    "ai": "^6.0.66",
     "better-sqlite3": "^11.8.1",
     "drizzle-orm": "^0.45.1",
     "jsqr": "^1.4.0",

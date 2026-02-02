@@ -5,20 +5,19 @@ import {
   getMessagesParamsSchema,
   downloadAttachmentParamsSchema,
 } from "@thisnick/agent-wechat-shared";
-import { runSendMessageAgent, runGetMessagesAgent } from "../agent/index.js";
 import { getMessagesFromDb, getMessageFromDb } from "../db/queries.js";
-import { execCommand } from "../lib/exec.js";
 import fs from "fs/promises";
 import type { Message, SendResult, DownloadAttachmentResult } from "@thisnick/agent-wechat-shared";
 
 export const messagesRouter = router({
   /**
-   * Send a message to a chat
+   * Send a message - TODO: implement via FSM plan
    */
   send: publicProcedure
     .input(sendParamsSchema)
     .mutation(async ({ input }): Promise<SendResult> => {
-      return runSendMessageAgent(input.chatId, input.text, input.files);
+      // TODO: Implement via sendMessagePlan
+      throw new Error("Not implemented - use FSM plan");
     }),
 
   /**
@@ -27,25 +26,11 @@ export const messagesRouter = router({
   get: publicProcedure
     .input(getMessagesParamsSchema)
     .query(async ({ input, ctx }): Promise<Message[]> => {
-      // First try database
-      const dbMessages = getMessagesFromDb(
-        ctx.db,
-        input.chatId,
-        input.limit,
-        input.since
-      );
-
-      // If empty, sync from UI
-      if (dbMessages.length === 0) {
-        await runGetMessagesAgent(input.chatId, input.limit);
-        return getMessagesFromDb(ctx.db, input.chatId, input.limit, input.since);
-      }
-
-      return dbMessages;
+      return getMessagesFromDb(ctx.db, input.chatId, input.limit, input.since);
     }),
 
   /**
-   * Sync messages from WeChat UI
+   * Sync messages - TODO: implement via FSM plan
    */
   sync: publicProcedure
     .input(z.object({
@@ -53,8 +38,8 @@ export const messagesRouter = router({
       maxMessages: z.number().default(50),
     }))
     .mutation(async ({ input }): Promise<{ count: number }> => {
-      const messages = await runGetMessagesAgent(input.chatId, input.maxMessages);
-      return { count: messages.length };
+      // TODO: Implement via getMessagesPlan
+      throw new Error("Not implemented - use FSM plan");
     }),
 
   /**
@@ -63,7 +48,6 @@ export const messagesRouter = router({
   download: publicProcedure
     .input(downloadAttachmentParamsSchema)
     .query(async ({ input, ctx }): Promise<DownloadAttachmentResult> => {
-      // Get message from database to find download path
       const message = getMessageFromDb(ctx.db, input.messageId);
 
       if (!message) {
@@ -78,7 +62,6 @@ export const messagesRouter = router({
         const buffer = await fs.readFile(message.downloadPath);
         const base64 = buffer.toString("base64");
 
-        // Detect mime type from extension
         const ext = message.downloadPath.split(".").pop()?.toLowerCase() || "";
         const mimeTypes: Record<string, string> = {
           png: "image/png",

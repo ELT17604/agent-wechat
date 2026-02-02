@@ -487,7 +487,6 @@ async function cmdUp() {
     "-p", `${DEFAULT_PORT}:${DEFAULT_PORT}`,
     "-p", `${VNC_PORT}:${VNC_PORT}`,
     "-v", `${CONTAINER_NAME}-data:/data`,
-    "-e", `GOOGLE_GENERATIVE_AI_API_KEY=${process.env.GOOGLE_GENERATIVE_AI_API_KEY || ""}`,
     image,
   ];
 
@@ -568,7 +567,6 @@ async function cmdDev() {
     "-v", `${agentServerDist}:/opt/agent-server/dist`,
     "-v", `${sharedDist}:/opt/shared/dist`,
     "-v", `${dockerToolsDir}:/opt/tools`,
-    "-e", `GOOGLE_GENERATIVE_AI_API_KEY=${process.env.GOOGLE_GENERATIVE_AI_API_KEY || ""}`,
     "-e", `NODE_OPTIONS=--inspect=0.0.0.0:${DEBUG_PORT}`,
     "-e", "DEV_MODE=1",
     image,

@@ -84,6 +84,15 @@ export const syncState = sqliteTable("sync_state", {
   primaryKey({ columns: [table.sessionId, table.key] }),
 ]);
 
+// ============================================
+// CONTEXT (FSM AppState persistence)
+// ============================================
+export const context = sqliteTable("context", {
+  sessionId: text("session_id").primaryKey().references(() => sessions.id),
+  appState: text("app_state").notNull(), // JSON-encoded AppState
+  updatedAt: text("updated_at").default("(datetime('now'))"),
+});
+
 // Type exports
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
@@ -93,3 +102,5 @@ export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
 export type SyncState = typeof syncState.$inferSelect;
 export type NewSyncState = typeof syncState.$inferInsert;
+export type Context = typeof context.$inferSelect;
+export type NewContext = typeof context.$inferInsert;

@@ -102,6 +102,13 @@ export function initDb(): DatabaseInstance {
       updated_at TEXT DEFAULT (datetime('now')),
       PRIMARY KEY (session_id, key)
     );
+
+    -- Context table (FSM AppState persistence)
+    CREATE TABLE IF NOT EXISTS context (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+      app_state TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   return db;
@@ -112,6 +119,13 @@ export function getDb(): DatabaseInstance {
     throw new Error("Database not initialized. Call initDb() first.");
   }
   return db;
+}
+
+export function getSqliteDb(): Database.Database {
+  if (!sqliteDb) {
+    throw new Error("Database not initialized. Call initDb() first.");
+  }
+  return sqliteDb;
 }
 
 export function closeDb(): void {

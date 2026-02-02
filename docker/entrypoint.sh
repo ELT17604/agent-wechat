@@ -47,6 +47,13 @@ if command -v fluxbox >/dev/null 2>&1; then
 fi
 
 # ============================================
+# Start notification daemon (prevents crash on incoming messages)
+# ============================================
+if command -v dunst >/dev/null 2>&1; then
+  su -s /bin/bash -c "DISPLAY=$DISPLAY DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS HOME=$WECHAT_HOME dunst &" wechat
+fi
+
+# ============================================
 # Start accessibility daemon as wechat user
 # ============================================
 if [ -x /usr/libexec/at-spi-bus-launcher ]; then
@@ -61,6 +68,13 @@ if [ "${ENABLE_VNC:-1}" = "1" ]; then
   # -shared: allow multiple connections (needed for vncdotool)
   # -xkb: better keyboard handling
   x11vnc -display "$DISPLAY" -forever -nopw -shared -xkb -rfbport 5900 &
+fi
+
+# ============================================
+# Start PulseAudio (for audio support)
+# ============================================
+if command -v pulseaudio >/dev/null 2>&1; then
+  su -s /bin/bash -c "pulseaudio --start --exit-idle-time=-1" wechat || true
 fi
 
 # ============================================
@@ -94,4 +108,10 @@ fi
 # ============================================
 echo "Starting agent-server on port ${AGENT_PORT:-6174}..."
 cd /opt/agent-server
-exec node dist/index.js
+
+# Use --watch for auto-restart on file changes (dev mode)
+if [ "${DEV_MODE:-0}" = "1" ]; then
+  exec node --watch dist/index.js
+else
+  exec node dist/index.js
+fi

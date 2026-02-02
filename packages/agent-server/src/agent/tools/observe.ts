@@ -47,8 +47,8 @@ export const observe = tool({
     const { width, height } = getPngDimensions(imageBase64);
 
     // Get accessibility tree in ARIA format (nested, human-readable)
-    const a11yScope = scope === "desktop" ? "desktop" : "full";
-    const a11y = await getA11yAria(a11yScope, { session });
+    // Note: The a11y script now only outputs desktop scope
+    const a11y = await getA11yAria({ session });
 
     return {
       imageBase64,

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
+import { Command } from "commander";
 import { createClient, createSubscriptionClient, Client, ClientOptions } from "./lib/client.js";
 import { spawn, execSync } from "child_process";
 import fs from "fs";
 import qrTerminal from "qrcode-terminal";
 import os from "os";
-
 import path from "path";
 import { fileURLToPath } from "url";
 
 const VERSION = "0.1.0";
-const CONTAINER_NAME = "wx";
+const CONTAINER_NAME = "agent-wechat";
 const DEFAULT_PORT = 6174;
 const VNC_PORT = 5900;
 const DEBUG_PORT = 9229;
@@ -33,219 +33,184 @@ function getConfig(): Config {
 
 function getImageTag(): string {
   const arch = os.arch();
-  if (arch === "arm64") return "wx:arm64";
-  return "wx:amd64";
+  if (arch === "arm64") return "agent-wechat:arm64";
+  return "agent-wechat:amd64";
 }
 
-function printHelp() {
-  console.log(`
-wx CLI v${VERSION}
+// Create program
+const program = new Command();
 
-Usage: wx [--session <name>] <command> [options]
+program
+  .name("wx")
+  .description("WeChat automation CLI")
+  .version(VERSION)
+  .option("-s, --session <name>", "Use specified session", "default");
 
-Global Options:
-  --session <name>    Use specified session (default: "default")
-
-Container Commands:
-  up                  Start the WeChat container (production mode)
-  dev                 Start in dev mode (hot reload + debugging)
-  down                Stop and remove the container
-  logs                Show container logs
-
-Session Commands:
-  session list        List all sessions
-  session create <n>  Create a new session
-  session start <n>   Start a session
-  session stop <n>    Stop a session
-  session delete <n>  Delete a session
-
-API Commands (use with --session to target specific session):
-  status              Show container and login status
-  login [options]     Log in to WeChat (shows QR code)
-                      --timeout N  Timeout in seconds (default: 300)
-                      --new        Switch to new account instead of existing
-  chats [limit]       List chats
-  find <name>         Find chat by name
-  messages <chatId>   Get messages from a chat
-  send <chatId> <msg> Send a message to a chat
-  sync <chatId>       Sync messages from WeChat UI
-
-Debug Commands:
-  screenshot [file]   Save screenshot to file (default: screenshot.png)
-  a11y [scope]        Dump accessibility tree (chats|messages|buttons|full|desktop)
-
-Environment Variables:
-  AGENT_WECHAT_URL    Server URL (default: http://localhost:${DEFAULT_PORT})
-  AGENT_WECHAT_TOKEN  Authentication token (optional)
-
-Examples:
-  pnpm cli session list              # List all sessions
-  pnpm cli session create work       # Create session named "work"
-  pnpm cli --session work login      # Login to work session
-  pnpm cli --session work chats      # List chats in work session
-
-Development:
-  1. Run 'pnpm build:watch' in one terminal
-  2. Run 'pnpm cli dev' in another terminal
-  3. Attach VS Code debugger to port ${DEBUG_PORT}
-  4. VNC viewer: localhost:${VNC_PORT}
-`);
-}
-
-async function main() {
-  let args = process.argv.slice(2);
-
-  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-    printHelp();
-    process.exit(0);
-  }
-
-  if (args[0] === "--version" || args[0] === "-v") {
-    console.log(VERSION);
-    process.exit(0);
-  }
-
-  // Parse --session flag
-  let sessionId: string | undefined;
-  const sessionIdx = args.indexOf("--session");
-  if (sessionIdx !== -1 && args[sessionIdx + 1]) {
-    sessionId = args[sessionIdx + 1];
-    args = [...args.slice(0, sessionIdx), ...args.slice(sessionIdx + 2)];
-  }
-
+// Helper to get client options from program
+function getClientOptions(): ClientOptions {
   const config = getConfig();
-  const clientOptions: ClientOptions = { url: config.serverUrl, token: config.token, sessionId };
-  const client = createClient(clientOptions);
-
-  const command = args[0];
-
-  try {
-    // Container commands don't need client
-    switch (command) {
-      case "up":
-        await cmdUp();
-        return;
-      case "dev":
-        await cmdDev();
-        return;
-      case "down":
-        await cmdDown();
-        return;
-      case "logs":
-        await cmdLogs();
-        return;
-    }
-
-    // Session commands
-    if (command === "session") {
-      const subcommand = args[1];
-      switch (subcommand) {
-        case "list":
-          await cmdSessionList(client);
-          return;
-        case "create":
-          if (!args[2]) {
-            console.error("Usage: wx session create <name>");
-            process.exit(1);
-          }
-          await cmdSessionCreate(client, args[2]);
-          return;
-        case "start":
-          if (!args[2]) {
-            console.error("Usage: wx session start <id|name>");
-            process.exit(1);
-          }
-          await cmdSessionStart(client, args[2]);
-          return;
-        case "stop":
-          if (!args[2]) {
-            console.error("Usage: wx session stop <id|name>");
-            process.exit(1);
-          }
-          await cmdSessionStop(client, args[2]);
-          return;
-        case "delete":
-          if (!args[2]) {
-            console.error("Usage: wx session delete <id|name>");
-            process.exit(1);
-          }
-          await cmdSessionDelete(client, args[2]);
-          return;
-        default:
-          console.error(`Unknown session subcommand: ${subcommand}`);
-          console.error("Available: list, create, start, stop, delete");
-          process.exit(1);
-      }
-    }
-
-    // API commands need client
-    switch (command) {
-      case "status":
-        await cmdStatus(client);
-        break;
-      case "login": {
-        // Parse --timeout option (in seconds)
-        const timeoutIdx = args.indexOf("--timeout");
-        let timeoutMs = 300_000; // 5 min default
-        if (timeoutIdx !== -1 && args[timeoutIdx + 1]) {
-          timeoutMs = parseInt(args[timeoutIdx + 1], 10) * 1000;
-        }
-        // Parse --new flag (switch to new account instead of using existing)
-        const newAccount = args.includes("--new");
-        await cmdLogin(clientOptions, timeoutMs, newAccount);
-        break;
-      }
-      case "chats":
-        await cmdChats(client, args[1] ? parseInt(args[1], 10) : undefined);
-        break;
-      case "find":
-        if (!args[1]) {
-          console.error("Usage: wx find <name>");
-          process.exit(1);
-        }
-        await cmdFind(client, args[1]);
-        break;
-      case "messages":
-        if (!args[1]) {
-          console.error("Usage: wx messages <chatId> [limit]");
-          process.exit(1);
-        }
-        await cmdMessages(client, args[1], args[2] ? parseInt(args[2], 10) : undefined);
-        break;
-      case "send":
-        if (!args[1] || !args[2]) {
-          console.error("Usage: wx send <chatId> <message>");
-          process.exit(1);
-        }
-        await cmdSend(client, args[1], args.slice(2).join(" "));
-        break;
-      case "sync":
-        if (!args[1]) {
-          console.error("Usage: wx sync <chatId> [maxMessages]");
-          process.exit(1);
-        }
-        await cmdSync(client, args[1], args[2] ? parseInt(args[2], 10) : undefined);
-        break;
-      case "screenshot":
-        await cmdScreenshot(client, args[1]);
-        break;
-      case "a11y":
-        await cmdA11y(client, args[1] as "chats" | "messages" | "buttons" | "full" | undefined);
-        break;
-      default:
-        console.error(`Unknown command: ${command}`);
-        printHelp();
-        process.exit(1);
-    }
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error(`Error: ${error.message}`);
-    } else {
-      console.error("An unexpected error occurred");
-    }
-    process.exit(1);
-  }
+  const opts = program.opts();
+  return {
+    url: config.serverUrl,
+    token: config.token,
+    sessionId: opts.session,
+  };
 }
+
+// Helper to create client
+function getClient(): Client {
+  return createClient(getClientOptions());
+}
+
+// ============================================
+// Container Commands
+// ============================================
+
+program
+  .command("up")
+  .description("Start the WeChat container (production mode)")
+  .action(cmdUp);
+
+program
+  .command("dev")
+  .description("Start in dev mode (hot reload + debugging)")
+  .action(cmdDev);
+
+program
+  .command("down")
+  .description("Stop and remove the container")
+  .action(cmdDown);
+
+program
+  .command("logs")
+  .description("Show container logs")
+  .action(cmdLogs);
+
+// ============================================
+// Session Commands
+// ============================================
+
+const sessionCmd = program
+  .command("session")
+  .description("Manage sessions");
+
+sessionCmd
+  .command("list")
+  .description("List all sessions")
+  .action(async () => {
+    await cmdSessionList(getClient());
+  });
+
+sessionCmd
+  .command("create <name>")
+  .description("Create a new session")
+  .action(async (name: string) => {
+    await cmdSessionCreate(getClient(), name);
+  });
+
+sessionCmd
+  .command("start <id>")
+  .description("Start a session")
+  .action(async (id: string) => {
+    await cmdSessionStart(getClient(), id);
+  });
+
+sessionCmd
+  .command("stop <id>")
+  .description("Stop a session")
+  .action(async (id: string) => {
+    await cmdSessionStop(getClient(), id);
+  });
+
+sessionCmd
+  .command("delete <id>")
+  .description("Delete a session")
+  .action(async (id: string) => {
+    await cmdSessionDelete(getClient(), id);
+  });
+
+// ============================================
+// API Commands
+// ============================================
+
+program
+  .command("status")
+  .description("Show container and login status")
+  .action(async () => {
+    await cmdStatus(getClient());
+  });
+
+program
+  .command("login")
+  .description("Log in to WeChat (shows QR code)")
+  .option("-t, --timeout <seconds>", "Timeout in seconds", "300")
+  .option("-n, --new", "Switch to new account instead of existing")
+  .action(async (opts) => {
+    const timeoutMs = parseInt(opts.timeout, 10) * 1000;
+    await cmdLogin(getClientOptions(), timeoutMs, opts.new ?? false);
+  });
+
+program
+  .command("chats")
+  .description("List chats")
+  .argument("[limit]", "Maximum number of chats to show")
+  .action(async (limit?: string) => {
+    await cmdChats(getClient(), limit ? parseInt(limit, 10) : undefined);
+  });
+
+program
+  .command("find <name>")
+  .description("Find chat by name")
+  .action(async (name: string) => {
+    await cmdFind(getClient(), name);
+  });
+
+program
+  .command("messages <chatId>")
+  .description("Get messages from a chat")
+  .argument("[limit]", "Maximum number of messages")
+  .action(async (chatId: string, limit?: string) => {
+    await cmdMessages(getClient(), chatId, limit ? parseInt(limit, 10) : undefined);
+  });
+
+program
+  .command("send <chatId> <message...>")
+  .description("Send a message to a chat")
+  .action(async (chatId: string, messageParts: string[]) => {
+    await cmdSend(getClient(), chatId, messageParts.join(" "));
+  });
+
+program
+  .command("sync <chatId>")
+  .description("Sync messages from WeChat UI")
+  .argument("[maxMessages]", "Maximum messages to sync")
+  .action(async (chatId: string, maxMessages?: string) => {
+    await cmdSync(getClient(), chatId, maxMessages ? parseInt(maxMessages, 10) : undefined);
+  });
+
+// ============================================
+// Debug Commands
+// ============================================
+
+program
+  .command("screenshot")
+  .description("Save screenshot to file")
+  .argument("[file]", "Output file path", "screenshot.png")
+  .action(async (file: string) => {
+    await cmdScreenshot(getClient(), file);
+  });
+
+program
+  .command("a11y")
+  .description("Dump accessibility tree")
+  .argument("[scope]", "Scope: chats|messages|buttons|full|desktop", "full")
+  .action(async (scope: string) => {
+    await cmdA11y(getClient(), scope as "chats" | "messages" | "buttons" | "full");
+  });
+
+// ============================================
+// Command Implementations
+// ============================================
 
 async function cmdStatus(client: Client) {
   const status = await client.status.get.query();
@@ -283,8 +248,15 @@ async function cmdLogin(options: ClientOptions, timeoutMs: number = 300_000, new
                 break;
               case "qr":
                 console.log("Scan this QR code with WeChat:\n");
-                qrTerminal.generate(event.qrData, { small: true });
+                // Use binaryData if available (preserves exact bytes), fallback to string
+                const qrInput = event.qrBinaryData
+                  ? Buffer.from(event.qrBinaryData as number[]).toString("utf-8")
+                  : event.qrData;
+                qrTerminal.generate(qrInput as string, { small: true });
                 console.log("\nWaiting for scan... (Ctrl+C to cancel)\n");
+                break;
+              case "phone_confirm":
+                console.log(`\n📱 ${event.message || "Please confirm login on your phone"}\n`);
                 break;
               case "login_success":
                 console.log("\n\nLogin successful!");
@@ -384,24 +356,25 @@ async function cmdSync(client: Client, chatId: string, maxMessages?: number) {
   console.log(`Synced ${result.count} messages.`);
 }
 
-async function cmdScreenshot(client: Client, outputPath?: string) {
-  const filePath = outputPath || "screenshot.png";
+async function cmdScreenshot(client: Client, outputPath: string) {
   console.log(`Capturing screenshot...`);
   const result = await client.debug.screenshot.query();
   const buffer = Buffer.from(result.base64, "base64");
-  fs.writeFileSync(filePath, buffer);
-  console.log(`Screenshot saved to ${filePath}`);
+  fs.writeFileSync(outputPath, buffer);
+  console.log(`Screenshot saved to ${outputPath}`);
 }
 
-async function cmdA11y(client: Client, scope?: "chats" | "messages" | "buttons" | "full") {
-  const result = await client.debug.a11y.query({ scope: scope || "full" });
+async function cmdA11y(client: Client, scope: "chats" | "messages" | "buttons" | "full") {
+  const result = await client.debug.a11y.query({ scope });
   if (result.error) {
     console.error(`Error: ${result.error}`);
   }
   console.log(JSON.stringify(result.items, null, 2));
 }
 
-// Session management commands
+// ============================================
+// Session Commands Implementation
+// ============================================
 
 async function cmdSessionList(client: Client) {
   const sessions = await client.sessions.list.query();
@@ -468,16 +441,17 @@ async function cmdSessionDelete(client: Client, idOrName: string) {
   }
 }
 
-// Container management commands
+// ============================================
+// Container Commands Implementation
+// ============================================
 
 async function cmdUp() {
   const image = getImageTag();
 
-  // Check if container already exists (use exact name match with regex)
+  // Check if container already exists
   try {
     const existingId = execSync(`docker ps -aq -f "name=^${CONTAINER_NAME}$"`, { encoding: "utf-8" }).trim();
     if (existingId) {
-      // Check if it's running
       const running = execSync(`docker ps -q -f "name=^${CONTAINER_NAME}$"`, { encoding: "utf-8" }).trim();
       if (running) {
         console.log(`Container ${CONTAINER_NAME} is already running.`);
@@ -485,7 +459,6 @@ async function cmdUp() {
         console.log(`VNC: localhost:${VNC_PORT}`);
         return;
       }
-      // Container exists but not running, start it
       console.log(`Starting existing container ${CONTAINER_NAME}...`);
       execSync(`docker start ${CONTAINER_NAME}`, { stdio: "inherit" });
       console.log(`API: http://localhost:${DEFAULT_PORT}`);
@@ -507,10 +480,10 @@ async function cmdUp() {
 
   console.log(`Starting container ${CONTAINER_NAME} from ${image}...`);
 
-  // Run container
   const dockerArgs = [
     "run", "-d",
     "--name", CONTAINER_NAME,
+    "--security-opt", "seccomp=unconfined",
     "-p", `${DEFAULT_PORT}:${DEFAULT_PORT}`,
     "-p", `${VNC_PORT}:${VNC_PORT}`,
     "-v", `${CONTAINER_NAME}-data:/data`,
@@ -525,7 +498,6 @@ async function cmdUp() {
     console.log(`VNC: localhost:${VNC_PORT}`);
     console.log(`\nWaiting for server to be ready...`);
 
-    // Wait for server to be ready
     for (let i = 0; i < 30; i++) {
       try {
         const response = await fetch(`http://localhost:${DEFAULT_PORT}/health`);
@@ -539,7 +511,7 @@ async function cmdUp() {
       await new Promise(r => setTimeout(r, 1000));
       process.stdout.write(".");
     }
-    console.log("\nServer did not become ready in time. Check logs with: wx logs");
+    console.log("\nServer did not become ready in time. Check logs with: pnpm cli logs");
   } catch (error) {
     console.error("Failed to start container:", error);
     process.exit(1);
@@ -578,7 +550,6 @@ async function cmdDev() {
     process.exit(1);
   }
 
-  // Paths for dev mounts
   const dockerToolsDir = path.join(MONOREPO_ROOT, "docker/tools");
 
   console.log(`Starting container ${CONTAINER_NAME} in dev mode...`);
@@ -586,10 +557,10 @@ async function cmdDev() {
   console.log(`  Mounting: ${sharedDist}`);
   console.log(`  Mounting: ${dockerToolsDir}`);
 
-  // Run container with volume mounts and debug port
   const dockerArgs = [
     "run", "-d",
     "--name", CONTAINER_NAME,
+    "--security-opt", "seccomp=unconfined",
     "-p", `${DEFAULT_PORT}:${DEFAULT_PORT}`,
     "-p", `${VNC_PORT}:${VNC_PORT}`,
     "-p", `${DEBUG_PORT}:${DEBUG_PORT}`,
@@ -599,8 +570,8 @@ async function cmdDev() {
     "-v", `${dockerToolsDir}:/opt/tools`,
     "-e", `GOOGLE_GENERATIVE_AI_API_KEY=${process.env.GOOGLE_GENERATIVE_AI_API_KEY || ""}`,
     "-e", `NODE_OPTIONS=--inspect=0.0.0.0:${DEBUG_PORT}`,
+    "-e", "DEV_MODE=1",
     image,
-    "node", "--watch", "/opt/agent-server/dist/index.js",
   ];
 
   try {
@@ -611,7 +582,6 @@ async function cmdDev() {
     console.log(`  Debug: localhost:${DEBUG_PORT}`);
     console.log(`\nWaiting for server to be ready...`);
 
-    // Wait for server to be ready
     for (let i = 0; i < 30; i++) {
       try {
         const response = await fetch(`http://localhost:${DEFAULT_PORT}/health`);
@@ -661,7 +631,8 @@ async function cmdLogs() {
   }
 }
 
-main().catch((err) => {
+// Parse and run
+program.parseAsync(process.argv).catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
 });

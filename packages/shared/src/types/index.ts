@@ -72,11 +72,12 @@ export interface LoginResult {
 
 // Login subscription events (for real-time QR monitoring)
 export type LoginSubscriptionEvent =
-  | { type: "status"; message: string }        // Status update
-  | { type: "qr"; qrData: string }             // QR code (initial or refreshed)
-  | { type: "login_success"; userId?: string } // Scan confirmed
-  | { type: "login_timeout" }                  // QR expired
-  | { type: "error"; message: string };        // No QR found, etc.
+  | { type: "status"; message: string }           // Status update
+  | { type: "qr"; qrData: string; qrBinaryData?: number[]; qrDataUrl?: string }  // QR code
+  | { type: "phone_confirm"; message?: string }   // User needs to confirm on phone
+  | { type: "login_success"; userId?: string }    // Login confirmed
+  | { type: "login_timeout" }                     // QR expired
+  | { type: "error"; message: string };           // No QR found, etc.
 
 // ============================================
 // CHATS

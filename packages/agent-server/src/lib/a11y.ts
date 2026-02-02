@@ -176,14 +176,12 @@ export async function getA11yTree(options?: ExecOptions): Promise<{
  *     - frame "WeChat" @(100,100 400x600)
  *       - button "OK" @(150,500 80x30)
  */
-export async function getA11yAria(scope: "desktop" | "full" = "desktop", options?: ExecOptions): Promise<{
+export async function getA11yAria(options?: ExecOptions): Promise<{
   tree: string;
   error?: string;
 }> {
   const result = await execCommand("python3", [
     A11Y_SCRIPT_PATH,
-    "--scope",
-    scope,
     "--format",
     "aria",
   ], options);
@@ -193,4 +191,45 @@ export async function getA11yAria(scope: "desktop" | "full" = "desktop", options
   }
 
   return { tree: result.stdout, error: undefined };
+}
+
+/**
+ * Nested A11y node for CSS-like selector matching
+ */
+export interface A11yNode {
+  role: string;
+  name: string;
+  bounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  children?: A11yNode[];
+}
+
+/**
+ * Get the desktop accessibility tree as a nested structure.
+ * Compatible with CSS-like selectors (querySelector).
+ */
+export async function getA11yDesktop(options?: ExecOptions): Promise<{
+  tree: A11yNode | null;
+  error?: string;
+}> {
+  const result = await execCommand("python3", [
+    A11Y_SCRIPT_PATH,
+    "--format",
+    "json",
+  ], options);
+
+  if (result.exitCode !== 0) {
+    return { tree: null, error: result.stderr || result.stdout };
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout) as A11yNode;
+    return { tree: parsed, error: undefined };
+  } catch {
+    return { tree: null, error: "Failed to parse a11y output" };
+  }
 }

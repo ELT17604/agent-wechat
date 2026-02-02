@@ -84,6 +84,9 @@ importers:
       '@trpc/client':
         specifier: ^11.9.0
         version: 11.9.0(@trpc/server@11.9.0(typescript@5.9.3))(typescript@5.9.3)
+      commander:
+        specifier: ^14.0.3
+        version: 14.0.3
       qrcode-terminal:
         specifier: ^0.12.0
         version: 0.12.0
@@ -531,6 +534,10 @@ packages:
 
   color-name@1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
+
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
 
   copy-anything@4.0.5:
     resolution: {integrity: sha512-7Vv6asjS4gMOuILabD3l739tsaxFQmC+a7pLZm02zyvs8p977bL3zEgq3yDk5rn9B0PbYgIv++jmHcuUab4RhA==}
@@ -1224,6 +1231,8 @@ snapshots:
       color-name: 1.1.4
 
   color-name@1.1.4: {}
+
+  commander@14.0.3: {}
 
   copy-anything@4.0.5:
     dependencies:

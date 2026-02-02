@@ -4,8 +4,11 @@ import { router, publicProcedure } from "./trpc.js";
 import { runA11yProbe } from "../lib/a11y.js";
 import { captureScreenshot } from "../lib/screenshot.js";
 import { decodeQrFromBase64, toDataURL } from "../lib/qr.js";
-import { runLoginAgent } from "../agent/login.js";
-import type { AgentContext } from "../agent/context.js";
+import { getSqliteDb } from "../db/index.js";
+import { createContext } from "../context/index.js";
+import { createExecution, runExecution } from "../execution/index.js";
+import { ia } from "../ia/index.js";
+import { loginPlan } from "../plans/index.js";
 import type { LoginState, Status, LoginSubscriptionEvent } from "@thisnick/agent-wechat-shared";
 
 export const statusRouter = router({
@@ -104,7 +107,7 @@ export const statusRouter = router({
   }),
 
   /**
-   * Subscribe to login flow - uses LLM agent to navigate login states
+   * Subscribe to login flow - uses FSM to navigate login states
    * Handles QR codes, account confirmation, phone confirmation, and errors
    */
   loginSubscription: publicProcedure
@@ -136,7 +139,7 @@ export const statusRouter = router({
 
         const run = async () => {
           try {
-            // Quick check: already logged in (WeChat app window)?
+            // Quick check: already logged in?
             const probe = await runA11yProbe({ session });
             if (probe.loggedIn) {
               emit.next({ type: "login_success" });
@@ -144,25 +147,32 @@ export const statusRouter = router({
               return;
             }
 
-            // Build context for agent
-            const context: AgentContext = {
-              session,
-              emit: (event) => {
-                if (!abortSignal.aborted) {
-                  emit.next(event);
-                }
-              },
-              abortSignal,
-              loginOptions: {
-                newAccount: input.newAccount,
-              },
-            };
+            // Get SQLite db for FSM context
+            const sqliteDb = getSqliteDb();
 
-            // Run LLM agent for all other cases
+            // Create FSM context
+            const context = await createContext(session, sqliteDb);
+
+            // Create execution
+            const execution = createExecution(
+              loginPlan,
+              { newAccount: input.newAccount },
+              context,
+              {
+                emit: (event) => {
+                  if (!abortSignal.aborted) {
+                    emit.next(event as LoginSubscriptionEvent);
+                  }
+                },
+                abortSignal,
+              }
+            );
+
+            // Run FSM execution
             emit.next({ type: "status", message: "Navigating login flow..." });
-            const result = await runLoginAgent(context);
+            const result = await runExecution(execution, ia);
 
-            if (abortSignal.aborted) {
+            if (execution.status === "aborted") {
               emit.next({ type: "login_timeout" });
             } else if (result.success) {
               emit.next({ type: "login_success" });

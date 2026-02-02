@@ -12,15 +12,20 @@ RUN apt-get update && apt-get install -y \
     xdotool scrot \
     # Accessibility
     at-spi2-core gir1.2-atspi-2.0 python3 python3-gi \
+    # Notifications
+    dunst libnotify-bin \
     # Fonts
     fonts-noto-cjk \
     # System
     dbus dbus-x11 ca-certificates curl \
-    # WeChat dependencies
+    # WeChat dependencies (basic)
     libatomic1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
     libgbm1 libglib2.0-0 libgtk-3-0 libnss3 libx11-6 \
     libxkbcommon0 libxkbcommon-x11-0 libxcb-icccm4 \
     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxss1 \
+    # Audio - needed for message notifications
+    pulseaudio alsa-base alsa-utils \
+    gstreamer1.0-pulseaudio gstreamer1.0-alsa \
     # New packages for agent-server
     xclip \
     sqlite3 \

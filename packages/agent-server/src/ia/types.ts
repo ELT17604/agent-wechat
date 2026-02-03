@@ -16,12 +16,19 @@ export interface Bounds {
   height: number;
 }
 
+export interface A11yWindowInfo {
+  pid: number;
+  id?: number;
+  attributes?: Record<string, string>;
+}
+
 export interface A11yNode {
   role: string;
   name: string;
   bounds?: Bounds;
   children?: A11yNode[];
   parent?: A11yNode;
+  window?: A11yWindowInfo; // Present on frame nodes
 }
 
 // ============================================

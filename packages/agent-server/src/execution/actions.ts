@@ -38,7 +38,23 @@ export async function executeAction<TParams>(
       // Calculate center of element
       const x = Math.round(element.bounds.x + element.bounds.width / 2);
       const y = Math.round(element.bounds.y + element.bounds.height / 2);
-      await execCommand("wechat-click", [String(x), String(y)], { session });
+
+      // Build click args - use window activation if frame info available
+      const args: string[] = [];
+      if (frame?.window?.pid && frame?.bounds) {
+        // Activate specific window by PID + bounds before clicking
+        args.push(
+          "--window",
+          String(frame.window.pid),
+          String(frame.bounds.x),
+          String(frame.bounds.y),
+          String(frame.bounds.width),
+          String(frame.bounds.height),
+          "--"
+        );
+      }
+      args.push(String(x), String(y));
+      await execCommand("wechat-click", args, { session });
       break;
     }
 

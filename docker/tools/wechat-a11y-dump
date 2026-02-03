@@ -43,6 +43,39 @@ def get_bounds(node):
         return None
 
 
+def get_window_info(node):
+    """Get window-related info for frame nodes (PID, attributes)."""
+    info = {}
+    try:
+        # Get process ID - can be used with xdotool search --pid
+        pid = node.get_process_id()
+        if pid > 0:
+            info["pid"] = pid
+    except Exception:
+        pass
+
+    try:
+        # Get accessible ID (AT-SPI internal, not X11 window ID)
+        info["id"] = node.get_id()
+    except Exception:
+        pass
+
+    try:
+        # Get attributes - some implementations include window ID here
+        attrs = node.get_attributes()
+        if attrs:
+            # Convert GHashTable to dict
+            attr_dict = {}
+            for key in attrs.keys():
+                attr_dict[key] = attrs[key]
+            if attr_dict:
+                info["attributes"] = attr_dict
+    except Exception:
+        pass
+
+    return info if info else None
+
+
 def dump_tree_nested(max_depth=30):
     """Dump desktop as nested JSON tree with children arrays."""
     Atspi.init()
@@ -71,6 +104,12 @@ def dump_tree_nested(max_depth=30):
 
             if bounds:
                 result["bounds"] = bounds
+
+            # Add window info for frame nodes (useful for xdotool)
+            if role == "frame":
+                window_info = get_window_info(node)
+                if window_info:
+                    result["window"] = window_info
 
             # Recursively process children
             children = []

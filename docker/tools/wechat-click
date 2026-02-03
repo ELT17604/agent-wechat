@@ -1,9 +1,36 @@
 #!/bin/bash
-# Click at coordinates
+# Click at coordinates, optionally activating a specific window first
 # Usage: wechat-click <x> <y> [button]
+#        wechat-click --window <pid> <wx> <wy> <ww> <wh> -- <x> <y> [button]
+#
 #   button: 1=left (default), 2=middle, 3=right
+#   --window: activate window by PID + bounds before clicking
 
 set -euo pipefail
+
+# Parse optional --window flag
+if [ "${1:-}" = "--window" ]; then
+  if [ "$#" -lt 8 ]; then
+    echo "Usage: wechat-click --window <pid> <wx> <wy> <ww> <wh> -- <x> <y> [button]" >&2
+    exit 1
+  fi
+  WIN_PID="$2"
+  WIN_X="$3"
+  WIN_Y="$4"
+  WIN_W="$5"
+  WIN_H="$6"
+  shift 6
+  # Skip the -- separator if present
+  if [ "${1:-}" = "--" ]; then
+    shift
+  fi
+
+  # Activate the window first
+  SCRIPT_DIR="$(dirname "$0")"
+  "$SCRIPT_DIR/wechat-window-activate" "$WIN_PID" "$WIN_X" "$WIN_Y" "$WIN_W" "$WIN_H" >/dev/null || {
+    echo "Warning: could not activate window" >&2
+  }
+fi
 
 if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
   echo "Usage: wechat-click <x> <y> [button]" >&2

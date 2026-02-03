@@ -7,7 +7,6 @@ import { decodeQrFromBase64, toDataURL } from "../lib/qr.js";
 import { getSqliteDb } from "../db/index.js";
 import { createContext } from "../context/index.js";
 import { createExecution, runExecution } from "../execution/index.js";
-import { ia } from "../ia/index.js";
 import { loginPlan } from "../plans/index.js";
 import type { LoginState, Status, LoginSubscriptionEvent } from "@thisnick/agent-wechat-shared";
 
@@ -170,7 +169,7 @@ export const statusRouter = router({
 
             // Run FSM execution
             emit.next({ type: "status", message: "Navigating login flow..." });
-            const result = await runExecution(execution, ia);
+            const result = await runExecution(execution);
 
             if (execution.status === "aborted") {
               emit.next({ type: "login_timeout" });

@@ -1,6 +1,7 @@
-import type { IAState, SearchResult, ActionParams } from "../types.js";
-import { querySelector, querySelectorAll } from "../selectors.js";
+import type { IAState, SearchResult, ActionParams, FrameIdentifyMetadata } from "../types.js";
+import { querySelector, querySelectorAll, findAncestor } from "../selectors.js";
 import { parseChat, parseMessage, extractActiveChatId } from "../helpers.js";
+import { windowControlCommands, extractWindowControlBounds } from "./base.js";
 
 /**
  * Chat state - WeChat main view with chat list and message view.
@@ -8,21 +9,27 @@ import { parseChat, parseMessage, extractActiveChatId } from "../helpers.js";
  * This is a combined state that represents the logged-in main window.
  * It handles chat list, message view, and search overlay.
  */
-export const chatState: IAState = {
+export const chatState: IAState<FrameIdentifyMetadata> = {
   fsm: "mainWindow",
   id: "chat",
 
   identify: ({ a11y }) => {
     // Must have all: (Weixin OR WeChat button) + Contacts button + Chats list
-    const hasMainButton = querySelector(a11y, 'push-button[name="Weixin"]') !== null ||
-                          querySelector(a11y, 'push-button[name="WeChat"]') !== null;
+    const mainButton = querySelector(a11y, 'push-button[name="Weixin"]') ??
+                       querySelector(a11y, 'push-button[name="WeChat"]');
+    if (!mainButton) return { identified: false };
+
     const hasContactsButton = querySelector(a11y, 'push-button[name="Contacts"]') !== null;
     const hasChatsList = querySelector(a11y, 'list[name="Chats"]') !== null;
 
-    return hasMainButton && hasContactsButton && hasChatsList;
+    if (!hasContactsButton || !hasChatsList) return { identified: false };
+
+    // Find the containing frame
+    const frame = findAncestor(mainButton, "frame");
+    return { identified: true, metadata: frame ? { frame } : undefined };
   },
 
-  reduce: ({ prev, action, a11y }) => {
+  reduce: ({ prev, a11y, metadata }) => {
     // Extract chat list
     const chatList = querySelector(a11y, 'list[name="Chats"]');
     const visibleChats = chatList?.children?.map(parseChat) ?? [];
@@ -65,6 +72,8 @@ export const chatState: IAState = {
       }
     }
 
+    const windowBounds = extractWindowControlBounds(metadata?.frame);
+
     return {
       ...prev,
       mainWindow: {
@@ -72,6 +81,7 @@ export const chatState: IAState = {
         selectedChatId,
         searchQuery,
         searchResults,
+        ...windowBounds,
       },
     };
   },
@@ -109,7 +119,10 @@ export const chatState: IAState = {
         { type: "key" as const, combo: "Return" },
       ],
     }),
+
+    // Window controls
+    ...windowControlCommands,
   },
 };
 
-export const chatStates: IAState[] = [chatState];
+export const chatStates: IAState<FrameIdentifyMetadata>[] = [chatState];

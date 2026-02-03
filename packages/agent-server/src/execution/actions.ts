@@ -10,6 +10,7 @@ export interface ActionContext<TParams = unknown> {
   a11y: A11yNode;
   screenshot: string; // base64
   execution: Execution<TParams>;
+  frame?: A11yNode; // Scoped frame for querySelector (from identify metadata)
 }
 
 /**
@@ -22,13 +23,15 @@ export async function executeAction<TParams>(
   action: Action,
   ctx: ActionContext<TParams>
 ): Promise<void> {
-  const { a11y, execution } = ctx;
+  const { a11y, execution, frame } = ctx;
   const session = execution.context.session;
+  // Use frame for scoped queries when available, fallback to full a11y tree
+  const queryRoot = frame ?? a11y;
 
   switch (action.type) {
     case "click": {
-      // Find element using CSS-like selector
-      const element = querySelector(a11y, action.selector);
+      // Find element using CSS-like selector (scoped to frame if available)
+      const element = querySelector(queryRoot, action.selector);
       if (!element?.bounds) {
         throw new Error(`Element not found: ${action.selector}`);
       }

@@ -52,7 +52,8 @@ The login flow uses a **deterministic FSM** instead of an LLM. This is faster, c
 |---------|----------|---------|
 | **IAState** | `src/ia/states/*.ts` | View state: identify from a11y, reduce to AppState, available commands |
 | **Effects** | `src/effects/watchers.ts` | Reactive side effects that fire on state change |
-| **Commands** | `src/ia/actions.ts` | UI operations (click, type, scroll, wait) |
+| **Commands** | `src/ia/states/*.ts` | Per-state UI operations (click, type, scroll, wait) |
+| **Base Commands** | `src/ia/states/base.ts` | Shared commands (maximize, minimize, close) |
 | **Plan** | `src/plans/*.ts` | Goal + action selection logic |
 | **Execution** | `src/execution/index.ts` | Main loop that runs the FSM |
 | **Context** | `src/context/index.ts` | Persists AppState to SQLite |
@@ -63,17 +64,19 @@ The login flow uses a **deterministic FSM** instead of an LLM. This is faster, c
 ┌──────────────────────────────────────────────────────────────┐
 │                    Execution Loop                             │
 │                                                               │
-│  1. OBSERVE    → a11y tree + screenshot                       │
-│  2. IDENTIFY   → find IAState where identify(obs) = true      │
-│  3. REDUCE     → iaState.reduce(prev, obs) → next AppState    │
+│  1. OBSERVE    → a11y tree + screenshot (with parent refs)    │
+│  2. IDENTIFY   → find IAState, get metadata (e.g., frame)     │
+│  3. REDUCE     → iaState.reduce(prev, obs, metadata) → state  │
 │  4. EFFECTS    → watchers(prev, next) → Effect[] (on change)  │
 │  5. PERSIST    → save AppState to SQLite                      │
-│  6. GOAL?      → plan.isGoalReached(state) → done?            │
-│  7. SELECT     → plan.selectAction(state) → action key        │
-│  8. EXECUTE    → run command (click, type, wait, etc.)        │
+│  6. SELECT     → plan.selectAction(state) → action key        │
+│  7. EXECUTE    → run command (scoped to frame if available)   │
+│  8. GOAL?      → plan.isGoalReached(state) → done?            │
 │  9. LOOP       → back to step 1                               │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+Note: Goal is checked AFTER action executes, so plans can run a final action before completing.
 
 ### Key Files
 
@@ -94,17 +97,24 @@ type Action =
   | { type: "wait"; ms: number }
   | { type: "sequence"; actions: Action[] };
 
-// IAState defines a view state
-interface IAState {
+// Identify returns metadata (e.g., matched frame for scoped queries)
+interface IdentifyResult<TMetadata> {
+  identified: boolean;
+  metadata?: TMetadata;
+}
+
+// IAState defines a view state (generic over metadata type)
+interface IAState<TMetadata = unknown> {
   fsm: "mainWindow" | "popup";
   id: string;
-  identify: (args: { a11y, screenshot }) => boolean;
-  reduce: (args: { prev, a11y, screenshot, db }) => AppState;
+  identify: (args: { a11y, screenshot }) => IdentifyResult<TMetadata>;
+  reduce: (args: { prev, a11y, screenshot, db, metadata }) => AppState;
   commands?: Record<string, Action | ((params) => Action)>;
 }
 ```
 
 **States** (`src/ia/states/`):
+- `base.ts` - Shared commands: `windowControlCommands` (maximize, minimize, close, sticky)
 - `login.ts` - Login states: `login_qr`, `login_account`, `login_phone_confirm`, `login_loading`
 - `chat.ts` - Main chat view with chat list and messages
 - `popup.ts` - Error/confirm/info popups
@@ -138,7 +148,9 @@ export const effectWatchers: EffectWatcher[] = [
 ```typescript
 export const loginPlan: Plan<LoginParams> = {
   id: "login",
-  isGoalReached: ({ state }) => state.mainWindow.view === "chat",
+  // Goal checked AFTER action executes
+  isGoalReached: ({ state }) =>
+    state.mainWindow.view === "chat" && state.popup === null,
   selectAction: ({ state, params }) => {
     if (state.popup) return "dismiss_popup";
     switch (state.mainWindow.view) {
@@ -146,6 +158,7 @@ export const loginPlan: Plan<LoginParams> = {
       case "login_account": return params.newAccount ? "click_switch_account" : "click_login";
       case "login_phone_confirm": return "wait";
       case "login_loading": return "wait";
+      case "chat": return "maximize";  // Final action before goal reached
       default: return null;
     }
   },
@@ -157,10 +170,14 @@ export const loginPlan: Plan<LoginParams> = {
 The a11y tree uses CSS-like selectors (`src/ia/selectors.ts`):
 
 ```typescript
-// Examples:
+// Query descendants
 querySelector(a11y, 'push-button[name="Log In"]')
 querySelector(a11y, 'list[name="Chats"] > list-item:nth-child(1)')
 querySelector(a11y, 'push-button[name=/OK|Confirm|确定/i]')  // regex
+
+// Traverse up (a11y nodes have parent refs)
+findAncestor(button, 'frame')  // Find containing frame
+findAncestor(button, (n) => n.role === 'frame' && n.name === 'WeChat')
 ```
 
 ## Tool Scripts (in container at /opt/tools/)
@@ -216,16 +233,43 @@ pnpm build:image:amd64        # Build Docker image (Intel)
 | Login flow | Deterministic FSM | Fast, cheap, reliable - no LLM needed |
 | State management | Redux-like (reduce → effects) | Pure reducers, reactive effects on state diff |
 | Effects | Fire on state CHANGE only | Prevents duplicate emissions |
-| Commands | UI ops only (no emissions) | Emissions handled by effects |
+| Commands | Per-state (not global) | Each state defines available commands |
+| Execution order | Action → Goal check | Allows final actions before completion |
+| A11y tree | Parent refs added | Enables `findAncestor` for frame scoping |
+| Click/type scoping | Use frame from metadata | Ensures actions target correct window |
 | A11y selectors | CSS-like syntax | Familiar, composable |
 | Context | Persisted to SQLite | Survives restarts |
 
 ## Adding New Features
 
-**To add a new login state:**
-1. Add state to `src/ia/states/login.ts` with `identify`, `reduce`, `commands`
-2. Add to `loginStates` array export
-3. Update `src/plans/login.ts` if action selection needed
+**To add a new state:**
+1. Add state to `src/ia/states/*.ts` with `identify`, `reduce`, `commands`
+2. Use `findAncestor` in identify to get frame metadata
+3. Spread `...windowControlCommands` for common window controls
+4. Add to the states array export
+5. Update plans if action selection needed
+
+Example state pattern:
+```typescript
+export const myState: IAState<FrameIdentifyMetadata> = {
+  fsm: "mainWindow",
+  id: "my_state",
+  identify: ({ a11y }) => {
+    const element = querySelector(a11y, 'some-selector');
+    if (!element) return { identified: false };
+    const frame = findAncestor(element, "frame");
+    return { identified: true, metadata: frame ? { frame } : undefined };
+  },
+  reduce: ({ prev, metadata }) => {
+    const windowBounds = extractWindowControlBounds(metadata?.frame);
+    return { ...prev, mainWindow: { view: "my_state", ...windowBounds } };
+  },
+  commands: {
+    my_action: { type: "click", selector: 'button[name="Do Thing"]' },
+    ...windowControlCommands,
+  },
+};
+```
 
 **To add a new effect:**
 1. Add watcher function to `src/effects/watchers.ts`
@@ -235,12 +279,17 @@ pnpm build:image:amd64        # Build Docker image (Intel)
 1. Create `src/plans/myplan.ts` with `isGoalReached` and `selectAction`
 2. Export from `src/plans/index.ts`
 3. Call via `createExecution(myPlan, params, context, options)`
+4. Remember: action executes BEFORE goal check (can have final action)
 
 ## Current Status
 
 - [x] Deterministic FSM for login flow
 - [x] Effect watchers for QR/phone_confirm/login_success
 - [x] Context persistence to SQLite
+- [x] Parent refs in a11y tree + findAncestor helper
+- [x] Frame-scoped click/type actions
+- [x] Per-state commands with shared base (window controls)
+- [x] Post-login maximize via execution loop (action → goal check)
 - [ ] Chat listing via FSM plan
 - [ ] Send message via FSM plan
 - [ ] File sending

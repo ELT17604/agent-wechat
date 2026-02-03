@@ -1,12 +1,12 @@
 import type {
+  Action,
   ActionParams,
+  ActionTemplate,
   A11yNode,
   AppState,
   Context,
   Effect,
   Execution,
-  ExecutionStatus,
-  InformationArchitecture,
   Plan,
   SubscriptionEvent,
 } from "../ia/types.js";
@@ -190,10 +190,11 @@ export interface ExecutionResult {
  * 6. Repeats
  */
 export async function runExecution<TParams extends ActionParams>(
-  execution: Execution<TParams>,
-  ia: InformationArchitecture
+  execution: Execution<TParams>
 ): Promise<ExecutionResult> {
   const maxSteps = 50;
+  const unknownStateTimeoutMs = 60000; // 1 minute
+  let unknownStateSince: number | null = null;
 
   for (let step = 0; step < maxSteps; step++) {
     execution.stepCount = step;
@@ -223,26 +224,48 @@ export async function runExecution<TParams extends ActionParams>(
     const identified = identifyStates(a11y, screenshot);
 
     if (!identified.mainWindow) {
-      // Unknown state - log debug info and wait
+      // Track when we first entered unknown state
+      if (unknownStateSince === null) {
+        unknownStateSince = Date.now();
+      }
+
+      const elapsedMs = Date.now() - unknownStateSince;
+      const elapsedSec = Math.round(elapsedMs / 1000);
+
+      // Fail after timeout
+      if (elapsedMs > unknownStateTimeoutMs) {
+        const debugInfo = extractDebugInfo(a11y);
+        console.log("[FSM] Unknown state timeout. A11y summary:", JSON.stringify(debugInfo, null, 2));
+        execution.status = "failed";
+        execution.error = `Unknown state for ${elapsedSec}s - no matching IAState found`;
+        return { success: false, error: execution.error };
+      }
+
+      // Log and wait
       const debugInfo = extractDebugInfo(a11y);
-      console.log("[FSM] Unknown state. A11y summary:", JSON.stringify(debugInfo, null, 2));
+      console.log(`[FSM] Unknown state (${elapsedSec}s). Buttons: ${debugInfo.buttons.join(", ") || "none"}`);
       execution.emit({
         type: "status",
-        message: `Unknown UI state, waiting... (found: ${debugInfo.buttons.join(", ") || "no buttons"})`,
+        message: `Unknown UI state (${elapsedSec}s), waiting... (buttons: ${debugInfo.buttons.join(", ") || "none"})`,
       });
       await sleep(1000);
       continue;
     }
 
+    // Reset unknown state timer when we identify a state
+    unknownStateSince = null;
+
     console.log(`[FSM] Identified: mainWindow=${identified.mainWindow.id}, popup=${identified.popup?.id ?? "none"}`);
 
-    // 3. Reduce: Update app state via reducers
+    // 3. Reduce: Update app state via reducers (pass metadata from identify)
+    const screenshotBuffer = Buffer.from(screenshot, "base64");
     let newAppState = identified.mainWindow.reduce({
       prev: execution.context.state,
       action: execution.lastAction ?? null,
       a11y,
-      screenshot: Buffer.from(screenshot, "base64"),
+      screenshot: screenshotBuffer,
       db: execution.context.db,
+      metadata: identified.mainWindowMetadata,
     });
 
     // Run popup reducer if popup is present, otherwise clear popup
@@ -251,8 +274,9 @@ export async function runExecution<TParams extends ActionParams>(
         prev: newAppState,
         action: execution.lastAction ?? null,
         a11y,
-        screenshot: Buffer.from(screenshot, "base64"),
+        screenshot: screenshotBuffer,
         db: execution.context.db,
+        metadata: identified.popupMetadata,
       });
     } else {
       newAppState = { ...newAppState, popup: null };
@@ -270,19 +294,7 @@ export async function runExecution<TParams extends ActionParams>(
     // 5. Persist: Save context to DB
     await execution.context.save();
 
-    // 6. Check: Is goal reached?
-    if (
-      execution.plan.isGoalReached({
-        state: newAppState,
-        params: execution.params,
-        db: execution.context.db,
-      })
-    ) {
-      execution.status = "succeeded";
-      return { success: true };
-    }
-
-    // 7. Select action: Plan returns action key
+    // 6. Select action: Plan returns action key
     const actionKey = execution.plan.selectAction({
       state: newAppState,
       params: execution.params,
@@ -291,30 +303,26 @@ export async function runExecution<TParams extends ActionParams>(
 
     console.log(`[FSM] Selected action: ${actionKey ?? "none"}`);
 
+    // 7. No action = stuck (goal not reached and nothing to do)
     if (!actionKey) {
-      // Re-check goal (might be done)
-      if (
-        execution.plan.isGoalReached({
-          state: newAppState,
-          params: execution.params,
-          db: execution.context.db,
-        })
-      ) {
-        execution.status = "succeeded";
-        return { success: true };
-      }
-
       execution.status = "failed";
       execution.error = "No action selected";
-      return { success: false, error: "No action selected" };
+      return { success: false, error: execution.error };
     }
 
-    // 8. Create action: Call lambda with params
-    const actionCreator = ia.actions[actionKey];
-    if (!actionCreator) {
+    // 8. Look up command from the appropriate state
+    // Popup actions come from popup state, others from mainWindow state
+    const isPopupAction = actionKey.startsWith("dismiss_") || actionKey.startsWith("cancel_");
+    const targetState = isPopupAction ? identified.popup : identified.mainWindow;
+    const actionFrame = isPopupAction
+      ? (identified.popupMetadata as { frame?: A11yNode } | undefined)?.frame
+      : (identified.mainWindowMetadata as { frame?: A11yNode } | undefined)?.frame;
+
+    const commandTemplate: ActionTemplate | undefined = targetState?.commands?.[actionKey];
+    if (!commandTemplate) {
       execution.status = "failed";
-      execution.error = `Unknown action: ${actionKey}`;
-      return { success: false, error: `Unknown action: ${actionKey}` };
+      execution.error = `Unknown command: ${actionKey} (state: ${targetState?.id ?? "none"})`;
+      return { success: false, error: execution.error };
     }
 
     // Compute additional params if needed
@@ -323,13 +331,18 @@ export async function runExecution<TParams extends ActionParams>(
       newAppState,
       execution.params
     );
-    const action = actionCreator(actionParams);
+
+    // Command can be static Action or function that returns Action
+    const action: Action = typeof commandTemplate === "function"
+      ? commandTemplate(actionParams)
+      : commandTemplate;
 
     // 9. Execute action
     const actionContext: ActionContext<TParams> = {
       a11y,
       screenshot,
       execution,
+      frame: actionFrame,
     };
 
     try {
@@ -343,7 +356,19 @@ export async function runExecution<TParams extends ActionParams>(
       // Continue - action failure doesn't stop execution
     }
 
-    // 10. Wait for UI to settle
+    // 10. Check goal after action
+    if (
+      execution.plan.isGoalReached({
+        state: newAppState,
+        params: execution.params,
+        db: execution.context.db,
+      })
+    ) {
+      execution.status = "succeeded";
+      return { success: true };
+    }
+
+    // 11. Wait for UI to settle
     await sleep(200);
   }
 

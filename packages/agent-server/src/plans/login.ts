@@ -32,7 +32,7 @@ export const loginPlan: Plan<LoginParams> = {
   params: loginParamsSchema,
 
   isGoalReached: ({ state }: { state: AppState }) => {
-    // Goal: main window shows chat view with no popup
+    // Goal: chat view with no popup
     return state.mainWindow.view === "chat" && state.popup === null;
   },
 
@@ -68,8 +68,8 @@ export const loginPlan: Plan<LoginParams> = {
         return "wait";
 
       case "chat":
-        // Already logged in, goal reached
-        return null;
+        // Maximize window, then goal is reached
+        return "maximize";
 
       default:
         // Unknown state

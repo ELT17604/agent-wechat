@@ -206,6 +206,16 @@ export interface A11yNode {
     height: number;
   };
   children?: A11yNode[];
+  parent?: A11yNode;
+}
+
+/**
+ * Add parent references to all nodes in the tree.
+ * This enables traversal up the tree via findAncestor.
+ */
+function addParentRefs(node: A11yNode, parent?: A11yNode): void {
+  node.parent = parent;
+  node.children?.forEach((child) => addParentRefs(child, node));
 }
 
 /**
@@ -228,6 +238,7 @@ export async function getA11yDesktop(options?: ExecOptions): Promise<{
 
   try {
     const parsed = JSON.parse(result.stdout) as A11yNode;
+    addParentRefs(parsed);
     return { tree: parsed, error: undefined };
   } catch {
     return { tree: null, error: "Failed to parse a11y output" };

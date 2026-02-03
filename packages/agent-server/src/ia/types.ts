@@ -21,6 +21,7 @@ export interface A11yNode {
   name: string;
   bounds?: Bounds;
   children?: A11yNode[];
+  parent?: A11yNode;
 }
 
 // ============================================
@@ -106,6 +107,11 @@ export interface MainWindowState {
   selectedChatId?: string;
   searchQuery?: string;
   searchResults?: SearchResult[];
+
+  // Window control bounds (captured from frame's toolbar)
+  closeButtonBounds?: Bounds;
+  minimizeButtonBounds?: Bounds;
+  maximizeButtonBounds?: Bounds;
 }
 
 export interface PopupState {
@@ -127,32 +133,46 @@ export interface IdentifyArgs {
   screenshot: string; // base64 PNG
 }
 
-export interface ReduceArgs {
+/**
+ * Result from identify function.
+ * Can include metadata (e.g., matched frame) for use in reduce.
+ */
+export interface IdentifyResult<TMetadata = unknown> {
+  identified: boolean;
+  metadata?: TMetadata;
+}
+
+/**
+ * Metadata containing a reference to the matched frame node.
+ * Used by states that need to scope queries to a specific window.
+ */
+export interface FrameIdentifyMetadata {
+  frame: A11yNode;
+}
+
+export interface ReduceArgs<TMetadata = unknown> {
   prev: AppState;
   action: Action | null;
   a11y: A11yNode;
   screenshot: Buffer;
   db: Database.Database;
+  metadata?: TMetadata;
 }
 
 // Action template: can be a static action or a function that takes params
 export type ActionTemplate = Action | ((params: ActionParams) => Action);
 
-export interface IAState {
+/**
+ * IAState defines a UI state in the FSM.
+ *
+ * @template TMetadata - Type of metadata returned by identify and passed to reduce
+ */
+export interface IAState<TMetadata = unknown> {
   fsm: "mainWindow" | "popup";
   id: string;
-  identify: (args: IdentifyArgs) => boolean;
-  reduce: (args: ReduceArgs) => AppState;
+  identify: (args: IdentifyArgs) => IdentifyResult<TMetadata>;
+  reduce: (args: ReduceArgs<TMetadata>) => AppState;
   commands?: Record<string, ActionTemplate>;
-}
-
-// ============================================
-// Information Architecture
-// ============================================
-
-export interface InformationArchitecture {
-  states: IAState[];
-  actions: Record<string, (params: ActionParams) => Action>;
 }
 
 // ============================================

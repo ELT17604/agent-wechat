@@ -1,6 +1,42 @@
 import type { A11yNode } from "./types.js";
 
 // ============================================
+// Ancestor Traversal
+// ============================================
+
+/**
+ * Find an ancestor node matching a predicate.
+ *
+ * @param node - The starting node
+ * @param predicate - Either a role name string or a predicate function
+ * @returns The matching ancestor or null
+ *
+ * @example
+ * // Find the containing frame
+ * findAncestor(button, 'frame')
+ *
+ * @example
+ * // Find ancestor with specific name
+ * findAncestor(button, (n) => n.role === 'frame' && n.name === 'WeChat')
+ */
+export function findAncestor(
+  node: A11yNode,
+  predicate: string | ((n: A11yNode) => boolean)
+): A11yNode | null {
+  const pred =
+    typeof predicate === "string"
+      ? (n: A11yNode) => n.role === predicate
+      : predicate;
+
+  let current = node.parent;
+  while (current) {
+    if (pred(current)) return current;
+    current = current.parent;
+  }
+  return null;
+}
+
+// ============================================
 // Selector AST Types
 // ============================================
 

@@ -33,6 +33,7 @@ function chatReduceBase(
   visibleChats?: VisibleChat[];
   focusedChatIndex?: number;
   focusedChatName?: string;
+  selectedChatIndex?: number;
   closeButtonBounds?: Bounds;
   minimizeButtonBounds?: Bounds;
   maximizeButtonBounds?: Bounds;
@@ -62,10 +63,12 @@ function chatReduceBase(
 
   const windowBounds = extractWindowControlBounds(metadata?.frame);
 
-  // Find list items and track focused item by AT-SPI state
+  // Find list items and track focused/selected items by AT-SPI state
   const listItems = chatList?.children?.filter((c) => c.role === "list-item") ?? [];
   const focusedIndex = listItems.findIndex(item => item.states?.includes("FOCUSED"));
+  const selectedIndex = listItems.findIndex(item => item.states?.includes("SELECTED"));
   const focusedItem = focusedIndex >= 0 ? listItems[focusedIndex] : undefined;
+  const focusedIsSelected = focusedIndex >= 0 && focusedIndex === selectedIndex;
 
   // Parse visible chats for name-based matching (still useful for watchers)
   const visibleChats: VisibleChat[] = [];
@@ -98,6 +101,7 @@ function chatReduceBase(
     visibleChats: visibleChats.length > 0 ? visibleChats : prev.mainWindow.visibleChats,
     focusedChatIndex: focusedIndex >= 0 ? focusedIndex : undefined,
     focusedChatName: focusedItem?.name,
+    selectedChatIndex: selectedIndex >= 0 ? selectedIndex : undefined,
     ...windowBounds,
   };
 }

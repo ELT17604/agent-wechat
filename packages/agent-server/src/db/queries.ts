@@ -92,7 +92,8 @@ export function findChatsByExactName(
 
 export function upsertChat(
   db: DatabaseInstance,
-  chat: Partial<Chat> & { name: string }
+  chat: Partial<Chat> & { name: string },
+  sessionId?: string
 ): Chat {
   const id = chat.id || randomUUID();
   const now = new Date().toISOString();
@@ -100,6 +101,7 @@ export function upsertChat(
   db.insert(chats)
     .values({
       id,
+      sessionId: sessionId ?? null,
       name: chat.name,
       imageHash: chat.imageHash ?? null,
       avatarDescription: chat.avatarDescription ?? null,
@@ -273,6 +275,26 @@ export function setSyncState(db: DatabaseInstance, key: string, value: string, s
 // ============================================
 // SESSION QUERIES
 // ============================================
+
+export function getSessionLoggedInUser(
+  db: DatabaseInstance,
+  sessionId: string
+): string | null {
+  const row = db.select({ loggedInUser: sessions.loggedInUser })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .get();
+  return row?.loggedInUser ?? null;
+}
+
+export function clearSessionChatData(
+  db: DatabaseInstance,
+  sessionId: string
+): void {
+  // Messages cascade-deleted via FK when chats are deleted
+  db.delete(chats).where(eq(chats.sessionId, sessionId)).run();
+  db.delete(syncState).where(eq(syncState.sessionId, sessionId)).run();
+}
 
 export function updateSessionLoggedInUser(
   db: DatabaseInstance,

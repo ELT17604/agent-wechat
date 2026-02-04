@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { Plan, ActionParams, SelectedAction } from "../ia/types.js";
-import { clickBounds } from "../ia/actions.js";
 import { upsertChat, findChatByImageHash, findChatsByExactName } from "../db/queries.js";
 import { DEFAULT_AVATAR_HASH } from "../lib/chat-matcher.js";
 
@@ -37,6 +36,7 @@ function shouldSkipChat(name?: string): boolean {
  */
 function persistChat(
   db: Parameters<typeof upsertChat>[0],
+  sessionId: string,
   chatName: string,
   isGroup: boolean,
   unreadCount: number,
@@ -59,7 +59,7 @@ function persistChat(
       imageHash: imageHash ?? existingChat.imageHash,
       isGroup: isGroup || existingChat.isGroup,
       unreadCount,
-    });
+    }, sessionId);
   } else {
     upsertChat(db, {
       name: chatName,
@@ -67,7 +67,7 @@ function persistChat(
       isGroup,
       unreadCount,
       createdAt: new Date().toISOString(),
-    });
+    }, sessionId);
   }
 }
 
@@ -76,23 +76,25 @@ function persistChat(
  */
 export interface SyncPlanState {
   phase: "init" | "syncing" | "done";
-  lastSelectedName: string | null;  // For detecting end of list (looped back)
+  lastSelectedName: string | null;
   processedCount: number;
-  pendingUnreadCount: number;  // Captured from focused item before pressing space
+  pendingUnreadCount: number;
+  lastSkippedIndex?: number;  // Detect end-of-list during skip chains
 }
 
 /**
- * Sync Chats Plan - Decoupled ctrl+Tab and space algorithm:
+ * Sync Chats Plan - ctrl+Tab navigation with end-of-list detection:
  *
  * 1. Init: Close any open chat, press Home, then ctrl+Tab
- * 2. Loop (no chat open - checking focused item):
- *    - If focused should skip → ctrl+Tab (skip it)
- *    - If focused === lastSelected → done (looped back)
+ * 2. Loop (no chat open - first item):
+ *    - If focused should skip → ctrl+Tab
  *    - Otherwise → note unreadCount, press space
- * 3. Loop (chat open - persist and move on):
- *    - Persist chat with noted unreadCount
- *    - Update lastSelectedName
- *    - Click to close, ctrl+Tab
+ * 3. Loop (chat open, new chat):
+ *    - Persist chat, emit progress, press ctrl+Tab (keep chat open)
+ * 4. Loop (chat open, already persisted - checking advance):
+ *    - If focusedChatIndex === selectedChatIndex → done (end of list)
+ *    - If focused should skip → ctrl+Tab
+ *    - Otherwise → note unreadCount, press space (switches to focused chat)
  */
 export const syncChatsPlan: Plan<SyncChatsParams, SyncPlanState> = {
   id: "sync_chats",
@@ -112,13 +114,14 @@ export const syncChatsPlan: Plan<SyncChatsParams, SyncPlanState> = {
     return false;
   },
 
-  selectAction: ({ state, identified, planState, db }): SelectedAction | null => {
+  selectAction: ({ state, identified, planState, db, sessionId }): SelectedAction | null => {
     const mainMeta = identified.mainWindow?.metadata;
     const view = state.mainWindow.view;
     const selectedBounds = state.mainWindow.selectedChatBounds;
     const openedChatName = state.mainWindow.openedChatName;
     const focusedName = state.mainWindow.focusedChatName;
     const focusedIndex = state.mainWindow.focusedChatIndex;
+    const selectedIndex = state.mainWindow.selectedChatIndex;
 
     // Get unread count from focused item in visibleChats
     const focusedUnread = focusedIndex !== undefined
@@ -130,7 +133,7 @@ export const syncChatsPlan: Plan<SyncChatsParams, SyncPlanState> = {
       // If chat is open, close it first
       if (view === "chat_open") {
         if (selectedBounds) {
-          return { action: clickBounds(selectedBounds), metadata: mainMeta };
+          return { action: { type: "click", x: selectedBounds.x + selectedBounds.width / 2, y: selectedBounds.y + selectedBounds.height / 2 }, metadata: mainMeta };
         }
         return { action: { type: "key", combo: "Escape" }, metadata: mainMeta };
       }
@@ -151,59 +154,32 @@ export const syncChatsPlan: Plan<SyncChatsParams, SyncPlanState> = {
 
     // === SYNCING PHASE ===
     if (planState.phase === "syncing") {
-      // --- Chat NOT open: evaluate focused item ---
+      // --- Chat NOT open: evaluate focused item (after init or edge case) ---
       if (view !== "chat_open") {
-        // Skip system chats
         if (shouldSkipChat(focusedName)) {
           return { action: { type: "key", combo: "ctrl+Tab" }, metadata: mainMeta };
         }
 
-        // Check if we've looped back (focused === last selected)
-        if (focusedName && focusedName === planState.lastSelectedName) {
-          planState.phase = "done";
-          return null;
-        }
-
-        // Note unread count and press space to select
         planState.pendingUnreadCount = focusedUnread;
         return { action: { type: "key", combo: "space" }, metadata: mainMeta };
       }
 
-      // --- Chat IS open: persist and move on ---
-      if (openedChatName) {
-        // Persist the chat with noted unread count
+      // --- Chat IS open ---
+
+      // New chat (not yet persisted): persist and ctrl+Tab to advance
+      if (openedChatName && openedChatName !== planState.lastSelectedName) {
         const imageHash = state.mainWindow.openedChatImageHash;
         const isGroup = state.mainWindow.openedChatIsGroup ?? false;
-        persistChat(db, openedChatName, isGroup, planState.pendingUnreadCount, imageHash);
+        persistChat(db, sessionId, openedChatName, isGroup, planState.pendingUnreadCount, imageHash);
         planState.processedCount++;
         planState.lastSelectedName = openedChatName;
+        planState.lastSkippedIndex = undefined;
 
-        // Emit progress event
-        const progressEvent = {
-          type: "emit" as const,
-          event: { type: "sync_progress", processedCount: planState.processedCount },
-        };
-
-        // Close and move focus to next: emit, click, ctrl+Tab
-        if (selectedBounds) {
-          return {
-            action: {
-              type: "sequence",
-              actions: [
-                progressEvent,
-                clickBounds(selectedBounds),
-                { type: "key", combo: "ctrl+Tab" },
-              ],
-            },
-            metadata: mainMeta,
-          };
-        }
         return {
           action: {
             type: "sequence",
             actions: [
-              progressEvent,
-              { type: "key", combo: "Escape" },
+              { type: "emit", event: { type: "sync_progress", processedCount: planState.processedCount } },
               { type: "key", combo: "ctrl+Tab" },
             ],
           },
@@ -211,8 +187,29 @@ export const syncChatsPlan: Plan<SyncChatsParams, SyncPlanState> = {
         };
       }
 
-      // Chat open but no name yet - wait for UI to settle
-      return null;
+      // Already persisted - checking if ctrl+Tab advanced
+
+      // End of list: focused item is the same as selected item
+      if (focusedIndex !== undefined && selectedIndex !== undefined && focusedIndex === selectedIndex) {
+        planState.phase = "done";
+        return { action: { type: "wait", ms: 0 }, metadata: mainMeta };
+      }
+
+      // Skip system chats
+      if (shouldSkipChat(focusedName)) {
+        // Detect stuck on same skip item (end of list lands on skip chat)
+        if (focusedIndex !== undefined && focusedIndex === planState.lastSkippedIndex) {
+          planState.phase = "done";
+          return { action: { type: "wait", ms: 0 }, metadata: mainMeta };
+        }
+        planState.lastSkippedIndex = focusedIndex;
+        return { action: { type: "key", combo: "ctrl+Tab" }, metadata: mainMeta };
+      }
+      planState.lastSkippedIndex = undefined;
+
+      // Advance: note unread count and press space to switch to focused chat
+      planState.pendingUnreadCount = focusedUnread;
+      return { action: { type: "key", combo: "space" }, metadata: mainMeta };
     }
 
     // === DONE ===

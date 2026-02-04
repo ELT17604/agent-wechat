@@ -143,6 +143,7 @@ export interface MainWindowState {
   // Chat selection tracking (from a11y states)
   focusedChatIndex?: number;
   focusedChatName?: string;  // For skip detection in plan
+  selectedChatIndex?: number;
 
   // Chat open specific (when view === 'chat_open')
   openedChatName?: string;

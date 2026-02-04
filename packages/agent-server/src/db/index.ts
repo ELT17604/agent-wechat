@@ -79,6 +79,7 @@ export function initDb(): DatabaseInstance {
 
   sqliteDb = new Database(dbPath);
   sqliteDb.pragma("journal_mode = WAL");
+  sqliteDb.pragma("foreign_keys = ON");
 
   // Create Drizzle instance with schema
   db = drizzle(sqliteDb, { schema });

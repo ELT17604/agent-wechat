@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Plan, ActionParams, SelectedAction, PlanArgs } from "../ia/types.js";
 import { LoginActions, PopupActions, WindowActions, CommonActions } from "../ia/actions.js";
 import { ContactCardActions } from "../ia/index.js";
-import { updateSessionLoggedInUser } from "../db/queries.js";
+import { getSessionLoggedInUser, clearSessionChatData, updateSessionLoggedInUser } from "../db/queries.js";
 
 /**
  * Login plan params
@@ -73,7 +73,11 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
       // Grab the ID (plan knows this is self-user context)
       if (state.contactCard.wechatId && !planState.extractedUserId) {
         planState.extractedUserId = state.contactCard.wechatId;
-        // Persist directly to DB
+        // Clear stale chat data if account switched
+        const previousUser = getSessionLoggedInUser(db, sessionId);
+        if (previousUser && previousUser !== state.contactCard.wechatId) {
+          clearSessionChatData(db, sessionId);
+        }
         updateSessionLoggedInUser(db, sessionId, state.contactCard.wechatId);
       }
       planState.phase = "contact_card_read";

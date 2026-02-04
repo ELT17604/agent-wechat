@@ -140,6 +140,7 @@ export const chatState: IAState<FrameIdentifyMetadata> = {
       ...args.prev,
       mainWindow: {
         view: "chat",
+        isLoggedIn: true,
         ...base,
         // Clear chat_open specific fields
         openedChatName: undefined,
@@ -242,6 +243,7 @@ export const chatOpenState: IAState<FrameIdentifyMetadata> = {
       ...args.prev,
       mainWindow: {
         view: "chat_open",
+        isLoggedIn: true,
         ...base,
         selectedChatId,
         openedChatName,

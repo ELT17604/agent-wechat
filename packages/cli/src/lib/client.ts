@@ -26,6 +26,7 @@ export interface Client {
   status: {
     get: { query: () => Promise<Status> };
     loginState: { query: () => Promise<LoginState> };
+    authStatus: { query: () => Promise<{ isLoggedIn: boolean }> };
     login: { mutate: () => Promise<LoginResult> };
   };
   chats: {

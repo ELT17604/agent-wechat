@@ -125,6 +125,7 @@ export interface VisibleChat {
 
 export interface MainWindowState {
   view: MainWindowView;
+  isLoggedIn: boolean;
 
   // Login-specific
   qrData?: string;
@@ -160,9 +161,23 @@ export interface PopupState {
   message?: string;
 }
 
+/**
+ * Contact card state - separate FSM for user profile cards.
+ *
+ * Separate from popup because:
+ * 1. No OK/Confirm button - PopupActions.DISMISS doesn't work
+ * 2. Has its own action vocabulary (Messages, Voice Call, Video Call, More, Escape)
+ * 3. Semantically different from error/confirm dialogs
+ */
+export interface ContactCardState {
+  wechatId?: string;
+  contactName?: string;
+}
+
 export interface AppState {
   mainWindow: MainWindowState;
   popup: PopupState | null;
+  contactCard: ContactCardState | null;
 }
 
 // ============================================
@@ -206,7 +221,7 @@ export interface ReduceArgs<TMetadata = unknown> {
  * @template TMetadata - Type of metadata returned by identify and passed to reduce
  */
 export interface IAState<TMetadata = unknown> {
-  fsm: "mainWindow" | "popup";
+  fsm: "mainWindow" | "popup" | "contactCard";
   id: string;
   identify: (args: IdentifyArgs) => IdentifyResult<TMetadata>;
   reduce: (args: ReduceArgs<TMetadata>) => AppState;
@@ -251,12 +266,14 @@ export interface Context {
 export interface IdentifiedStatesRef {
   mainWindow: { state: IAState; metadata?: unknown } | null;
   popup: { state: IAState; metadata?: unknown } | null;
+  contactCard: { state: IAState; metadata?: unknown } | null;
 }
 
 export interface PlanArgs<TParams extends ActionParams = ActionParams, TPlanState = unknown> {
   state: AppState;
   params: TParams;
   db: DatabaseInstance;
+  sessionId: string;  // For plan-level DB writes
   a11y: A11yNode;
   identified: IdentifiedStatesRef;
   /** Plan-local state - mutable, lives only during execution */
@@ -339,7 +356,8 @@ export interface Message {
 
 export function createDefaultAppState(): AppState {
   return {
-    mainWindow: { view: "login_qr" },
+    mainWindow: { view: "login_qr", isLoggedIn: false },
     popup: null,
+    contactCard: null,
   };
 }

@@ -12,6 +12,7 @@ export const sessions = sqliteTable("sessions", {
   vncPort: integer("vnc_port").unique(),
   status: text("status", { enum: ["stopped", "starting", "running", "stopping", "error"] }).notNull().default("stopped"),
   loginState: text("login_state").notNull().default("logged_out"),
+  loggedInUser: text("logged_in_user"),  // WeChat ID of logged-in user
   wechatPid: integer("wechat_pid"),
   xvfbPid: integer("xvfb_pid"),
   dbusPid: integer("dbus_pid"),

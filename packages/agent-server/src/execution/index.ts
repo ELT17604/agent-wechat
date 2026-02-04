@@ -231,7 +231,7 @@ export async function runExecution<TParams extends ActionParams, TPlanState = un
     // Reset unknown state timer when we identify a state
     unknownStateSince = null;
 
-    console.log(`[FSM] Identified: mainWindow=${identified.mainWindow.state.id}, popup=${identified.popup?.state.id ?? "none"}`);
+    console.log(`[FSM] Identified: mainWindow=${identified.mainWindow.state.id}, popup=${identified.popup?.state.id ?? "none"}, contactCard=${identified.contactCard?.state.id ?? "none"}`);
 
     // 3. Reduce: Update app state via reducers (pass metadata from identify)
     const screenshotBuffer = Buffer.from(screenshot, "base64");
@@ -258,6 +258,20 @@ export async function runExecution<TParams extends ActionParams, TPlanState = un
       newAppState = { ...newAppState, popup: null };
     }
 
+    // Run contactCard reducer if present, otherwise clear contactCard
+    if (identified.contactCard) {
+      newAppState = identified.contactCard.state.reduce({
+        prev: newAppState,
+        action: execution.lastAction ?? null,
+        a11y,
+        screenshot: screenshotBuffer,
+        db: execution.context.db,
+        metadata: identified.contactCard.metadata,
+      });
+    } else {
+      newAppState = { ...newAppState, contactCard: null };
+    }
+
     const prevAppState = execution.context.state;
     execution.context.state = newAppState;
 
@@ -275,6 +289,7 @@ export async function runExecution<TParams extends ActionParams, TPlanState = un
       state: newAppState,
       params: execution.params,
       db: execution.context.db,
+      sessionId: execution.context.sessionId,
       a11y,
       identified,
       planState: execution.planState,
@@ -318,6 +333,7 @@ export async function runExecution<TParams extends ActionParams, TPlanState = un
         state: newAppState,
         params: execution.params,
         db: execution.context.db,
+        sessionId: execution.context.sessionId,
         planState: execution.planState,
       })
     ) {

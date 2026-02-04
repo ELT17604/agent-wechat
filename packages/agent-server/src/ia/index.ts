@@ -2,11 +2,13 @@ import type { A11yNode, IAState, IdentifyArgs } from "./types.js";
 import { loginStates } from "./states/login.js";
 import { chatStates } from "./states/chat.js";
 import { popupStates } from "./states/popup.js";
+import { contactCardState, ContactCardActions } from "./states/contact-card.js";
 
 // Re-export types and utilities
 export * from "./types.js";
 export * from "./selectors.js";
 export * from "./helpers.js";
+export { ContactCardActions };
 
 /**
  * All UI states (order matters - first match wins).
@@ -18,6 +20,8 @@ export const allStates: IAState<any>[] = [
   ...loginStates, // Then login states
   // Popup states
   ...popupStates,
+  // Contact card (separate FSM)
+  contactCardState,
 ];
 
 /**
@@ -35,14 +39,15 @@ export interface IdentifiedState<TMetadata = unknown> {
 export interface IdentifiedStates {
   mainWindow: IdentifiedState | null;
   popup: IdentifiedState | null;
+  contactCard: IdentifiedState | null;
 }
 
 /**
  * Identify current states from a11y tree and screenshot.
  *
- * Returns the identified states for both FSMs (mainWindow and popup),
+ * Returns the identified states for all FSMs (mainWindow, popup, contactCard),
  * along with any metadata from the identify functions.
- * Popup can overlay mainWindow.
+ * Popup and contactCard can overlay mainWindow.
  */
 export function identifyStates(
   a11yTree: A11yNode,
@@ -50,6 +55,7 @@ export function identifyStates(
 ): IdentifiedStates {
   let mainWindow: IdentifiedState | null = null;
   let popup: IdentifiedState | null = null;
+  let contactCard: IdentifiedState | null = null;
 
   const args: IdentifyArgs = { a11y: a11yTree, screenshot };
 
@@ -61,15 +67,17 @@ export function identifyStates(
           mainWindow = { state, metadata: result.metadata };
         } else if (state.fsm === "popup" && !popup) {
           popup = { state, metadata: result.metadata };
+        } else if (state.fsm === "contactCard" && !contactCard) {
+          contactCard = { state, metadata: result.metadata };
         }
       }
     } catch {
       // Ignore errors in identify - state just won't match
     }
 
-    // Stop if we found both
-    if (mainWindow && popup) break;
+    // Stop if we found all three
+    if (mainWindow && popup && contactCard) break;
   }
 
-  return { mainWindow, popup };
+  return { mainWindow, popup, contactCard };
 }

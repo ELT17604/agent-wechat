@@ -134,7 +134,15 @@ program
     await cmdStatus(getClient());
   });
 
-program
+// ============================================
+// Auth Commands
+// ============================================
+
+const authCmd = program
+  .command("auth")
+  .description("Authentication commands");
+
+authCmd
   .command("login")
   .description("Log in to WeChat (shows QR code)")
   .option("-t, --timeout <seconds>", "Timeout in seconds", "300")
@@ -142,6 +150,19 @@ program
   .action(async (opts) => {
     const timeoutMs = parseInt(opts.timeout, 10) * 1000;
     await cmdLogin(getClientOptions(), timeoutMs, opts.new ?? false);
+  });
+
+authCmd
+  .command("status")
+  .description("Check login status")
+  .action(async () => {
+    const client = getClient();
+    const { isLoggedIn } = await client.status.authStatus.query();
+    if (isLoggedIn) {
+      console.log("Logged in");
+    } else {
+      console.log("Not logged in");
+    }
   });
 
 // ============================================

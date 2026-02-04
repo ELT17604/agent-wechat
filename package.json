@@ -12,6 +12,7 @@
     "build:image:arm64": "bash scripts/build-images-local.sh --arch arm64",
     "build:image:amd64": "bash scripts/build-images-local.sh --arch amd64",
     "cli": "node packages/cli/dist/cli.js",
+    "db": "docker exec -it agent-wechat sqlite3 -header -column /data/agent.db",
     "dev": "bash scripts/dev.sh"
   },
   "devDependencies": {

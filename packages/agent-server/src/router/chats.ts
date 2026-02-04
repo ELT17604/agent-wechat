@@ -11,7 +11,7 @@ import { getChatsFromDb, getChatFromDb, findChatsByName } from "../db/queries.js
 import { getDb } from "../db/index.js";
 import { createContext } from "../context/index.js";
 import { createExecution, runExecution } from "../execution/index.js";
-import { syncChatsPlan } from "../plans/index.js";
+import { syncChatsPlan, authStatusPlan } from "../plans/index.js";
 import type { Chat, SyncSubscriptionEvent } from "@thisnick/agent-wechat-shared";
 
 export const chatsRouter = router({
@@ -90,6 +90,21 @@ export const chatsRouter = router({
 
             // Create FSM context
             const context = await createContext(session, db);
+
+            // Check login status first
+            const authExecution = createExecution(
+              authStatusPlan,
+              {},
+              context,
+              { emit: () => {}, abortSignal }
+            );
+            await runExecution(authExecution);
+
+            if (!context.state.mainWindow.isLoggedIn) {
+              emit.next({ type: "error", message: "Not logged in. Run 'pnpm cli auth login' first." });
+              emit.complete();
+              return;
+            }
 
             // Create execution
             const execution = createExecution(

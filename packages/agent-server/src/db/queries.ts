@@ -2,7 +2,7 @@ import { eq, desc, like, gt, and, sql, isNull } from "drizzle-orm";
 import type { Chat, Message, MessageContentType } from "@thisnick/agent-wechat-shared";
 import { randomUUID } from "crypto";
 import type { DatabaseInstance } from "./index.js";
-import { chats, messages, syncState } from "./schema.js";
+import { chats, messages, syncState, sessions } from "./schema.js";
 
 // ============================================
 // CHAT QUERIES
@@ -268,4 +268,26 @@ export function setSyncState(db: DatabaseInstance, key: string, value: string, s
       },
     })
     .run();
+}
+
+// ============================================
+// SESSION QUERIES
+// ============================================
+
+export function updateSessionLoggedInUser(
+  db: DatabaseInstance,
+  sessionId: string,
+  loggedInUser: string | null
+): void {
+  db.update(sessions)
+    .set({ loggedInUser, updatedAt: new Date().toISOString() })
+    .where(eq(sessions.id, sessionId))
+    .run();
+}
+
+export function clearSessionLoggedInUser(
+  db: DatabaseInstance,
+  sessionId: string
+): void {
+  updateSessionLoggedInUser(db, sessionId, null);
 }

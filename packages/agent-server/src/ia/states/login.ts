@@ -39,6 +39,7 @@ export const loginQrState: IAState<FrameIdentifyMetadata> = {
       ...prev,
       mainWindow: {
         view: "login_qr",
+        isLoggedIn: false,
         qrData: qrResult?.data ?? prev.mainWindow.qrData,
         qrBinaryData: qrResult?.binaryData ?? prev.mainWindow.qrBinaryData,
         ...windowBounds,
@@ -75,6 +76,7 @@ export const loginAccountState: IAState<FrameIdentifyMetadata> = {
       ...prev,
       mainWindow: {
         view: "login_account",
+        isLoggedIn: false,
         accountName: nameEl?.name?.replace("Current User", "").trim(),
         ...windowBounds,
       },
@@ -105,6 +107,7 @@ export const loginPhoneConfirmState: IAState<FrameIdentifyMetadata> = {
       ...prev,
       mainWindow: {
         view: "login_phone_confirm",
+        isLoggedIn: false,
         ...windowBounds,
       },
     };
@@ -156,6 +159,7 @@ export const loginLoadingState: IAState<FrameIdentifyMetadata> = {
       ...prev,
       mainWindow: {
         view: "login_loading" as const,
+        isLoggedIn: false,
         ...windowBounds,
       },
     };

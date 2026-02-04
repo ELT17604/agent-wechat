@@ -15,6 +15,13 @@
       "when": 1770165705235,
       "tag": "0001_gifted_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1770239256702,
+      "tag": "0002_soft_johnny_blaze",
+      "breakpoints": true
     }
   ]
 }

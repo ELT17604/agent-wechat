@@ -7,7 +7,7 @@ import { decodeQrFromBase64, toDataURL } from "../lib/qr.js";
 import { getDb } from "../db/index.js";
 import { createContext } from "../context/index.js";
 import { createExecution, runExecution } from "../execution/index.js";
-import { loginPlan } from "../plans/index.js";
+import { loginPlan, authStatusPlan } from "../plans/index.js";
 import type { LoginState, Status, LoginSubscriptionEvent } from "@thisnick/agent-wechat-shared";
 
 export const statusRouter = router({
@@ -54,6 +54,35 @@ export const statusRouter = router({
     } catch {
       return { status: "logged_out" };
     }
+  }),
+
+  /**
+   * Check auth status via FSM observation
+   * Runs one FSM cycle to update state and returns isLoggedIn
+   */
+  authStatus: publicProcedure.query(async ({ ctx }): Promise<{ isLoggedIn: boolean }> => {
+    const session = ctx.session;
+    if (!session) {
+      return { isLoggedIn: false };
+    }
+
+    const db = getDb();
+    const context = await createContext(session, db);
+    const abortController = new AbortController();
+
+    const execution = createExecution(
+      authStatusPlan,
+      {},
+      context,
+      {
+        emit: () => {},
+        abortSignal: abortController.signal,
+      }
+    );
+
+    await runExecution(execution);
+
+    return { isLoggedIn: context.state.mainWindow.isLoggedIn };
   }),
 
   /**

@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `logged_in_user` text;

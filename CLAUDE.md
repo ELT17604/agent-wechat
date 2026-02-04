@@ -200,7 +200,7 @@ findAncestor(button, (n) => n.role === 'frame' && n.name === 'WeChat')
 pnpm cli up              # Start container
 pnpm cli down            # Stop container
 pnpm cli status          # Check server + login state
-pnpm cli login           # Subscribe to login flow (shows QR in terminal)
+pnpm cli auth login      # Subscribe to login flow (shows QR in terminal)
 pnpm cli chats list      # List chats from DB (id, unread, group, name)
 pnpm cli chats sync      # Sync chat list via selection (default: 20 chats)
 pnpm cli send <id> <msg> # Send message to chat

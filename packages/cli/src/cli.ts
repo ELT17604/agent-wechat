@@ -593,9 +593,11 @@ async function cmdUp() {
     "run", "-d",
     "--name", CONTAINER_NAME,
     "--security-opt", "seccomp=unconfined",
+    "--cap-add=SYS_PTRACE",
     "-p", `${DEFAULT_PORT}:${DEFAULT_PORT}`,
     "-p", `${VNC_PORT}:${VNC_PORT}`,
     "-v", `${CONTAINER_NAME}-data:/data`,
+    "-v", `${CONTAINER_NAME}-wechat-home:/home/wechat`,
     image,
   ];
 

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Wrapper to run wechat-extract-keys.py with correct HOME directory
+# WeChat runs as 'wechat' user, so databases are under /home/wechat/
+exec env HOME=/home/wechat python3 /opt/tools/wechat-extract-keys.py "$@"

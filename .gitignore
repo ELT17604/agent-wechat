@@ -23,6 +23,8 @@ docker/shared/
 # Claude settings (local only)
 .claude
 
+__pycache__
+*.pyc
 *.log
 .DS_Store
 screenshot.png

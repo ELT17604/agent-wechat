@@ -59,10 +59,12 @@ echo "  Mounting: $DOCKER_TOOLS"
 docker run -d \
   --name "$CONTAINER_NAME" \
   --security-opt seccomp=unconfined \
+  --cap-add=SYS_PTRACE \
   -p "$DEFAULT_PORT:$DEFAULT_PORT" \
   -p "$VNC_PORT:$VNC_PORT" \
   -p "$DEBUG_PORT:$DEBUG_PORT" \
   -v "$CONTAINER_NAME-data:/data" \
+  -v "$CONTAINER_NAME-wechat-home:/home/wechat" \
   -v "$AGENT_SERVER_DIST:/opt/agent-server/dist" \
   -v "$AGENT_SERVER_DRIZZLE:/opt/agent-server/drizzle" \
   -v "$SHARED_DIST:/opt/shared/dist" \

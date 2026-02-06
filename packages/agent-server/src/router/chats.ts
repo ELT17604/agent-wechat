@@ -21,7 +21,7 @@ export const chatsRouter = router({
       const keys = getStoredKeys(ctx.db, session.id, session.loggedInUser);
       if (!keys["session.db"] || !keys["contact.db"]) return [];
 
-      return listChatsFromWechatDb(session.loggedInUser, keys, input.limit);
+      return listChatsFromWechatDb(session.loggedInUser, keys, input.limit, input.offset);
     }),
 
   /**

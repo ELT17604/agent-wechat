@@ -177,9 +177,10 @@ chatsCmd
   .command("list")
   .description("List chats from WeChat database")
   .option("-l, --limit <number>", "Maximum number of chats", "50")
+  .option("-o, --offset <number>", "Skip first N chats", "0")
   .option("-j, --json", "Output as JSON")
   .action(async (opts) => {
-    await cmdChats(getClient(), parseInt(opts.limit, 10), opts.json ?? false);
+    await cmdChats(getClient(), parseInt(opts.limit, 10), parseInt(opts.offset, 10), opts.json ?? false);
   });
 
 program
@@ -303,8 +304,8 @@ async function cmdLogin(options: ClientOptions, timeoutMs: number = 300_000, new
   }
 }
 
-async function cmdChats(client: Client, limit: number = 50, json: boolean = false) {
-  const chats = await client.chats.list.query({ limit });
+async function cmdChats(client: Client, limit: number = 50, offset: number = 0, json: boolean = false) {
+  const chats = await client.chats.list.query({ limit, offset });
 
   if (json) {
     console.log(JSON.stringify(chats, null, 2));

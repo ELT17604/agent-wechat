@@ -40,7 +40,8 @@ interface ContactRow {
 export function listChatsFromWechatDb(
   accountDir: string,
   keys: Record<string, string>,
-  limit: number = 50
+  limit: number = 50,
+  offset: number = 0
 ): Chat[] {
   const sessionKey = keys["session.db"];
   const contactKey = keys["contact.db"];
@@ -61,7 +62,7 @@ export function listChatsFromWechatDb(
      FROM SessionTable
      WHERE is_hidden = 0
      ORDER BY sort_timestamp DESC
-     LIMIT ${limit};`
+     LIMIT ${limit} OFFSET ${offset};`
   ) as unknown as SessionRow[];
 
   if (sessions.length === 0) return [];

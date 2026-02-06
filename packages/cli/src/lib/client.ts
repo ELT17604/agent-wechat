@@ -26,7 +26,7 @@ export interface Client {
     login: { mutate: () => Promise<LoginResult> };
   };
   chats: {
-    list: { query: (input: { limit?: number }) => Promise<Chat[]> };
+    list: { query: (input: { limit?: number; offset?: number }) => Promise<Chat[]> };
     get: { query: (input: { id: string }) => Promise<Chat | null> };
     find: { query: (input: { name: string }) => Promise<Chat[]> };
   };

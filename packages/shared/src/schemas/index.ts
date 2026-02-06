@@ -135,6 +135,7 @@ export const chatSchema = z.object({
 
 export const listChatsParamsSchema = z.object({
   limit: z.number().int().positive().max(100).optional().default(50),
+  offset: z.number().int().nonnegative().optional().default(0),
 });
 
 export const findChatParamsSchema = z.object({

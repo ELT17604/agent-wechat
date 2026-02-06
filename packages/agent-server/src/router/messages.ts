@@ -5,7 +5,7 @@ import {
   getMediaParamsSchema,
 } from "@thisnick/agent-wechat-shared";
 import type { SendResult, Message, MediaResult } from "@thisnick/agent-wechat-shared";
-import { getStoredKeys } from "../lib/wechat-keys.js";
+import { getStoredKeys, getImageKeys, storeSingleKey } from "../lib/wechat-keys.js";
 import { listMessagesFromWechatDb } from "../lib/wechat-messages.js";
 import { getMessageMedia } from "../lib/wechat-media.js";
 
@@ -34,8 +34,12 @@ export const messagesRouter = router({
       const session = ctx.session;
       if (!session?.loggedInUser) return { type: "unsupported", format: "", filename: "" };
 
-      const keys = getStoredKeys(ctx.db, session.id, session.loggedInUser);
-      return getMessageMedia(session.loggedInUser, keys, input.chatId, input.localId);
+      const accountDir = session.loggedInUser;
+      const keys = getStoredKeys(ctx.db, session.id, accountDir);
+      const imageKeys = getImageKeys(ctx.db, session.id, accountDir);
+      return getMessageMedia(accountDir, keys, input.chatId, input.localId, imageKeys,
+        (xorByte) => storeSingleKey(ctx.db, session.id, accountDir, "_image_xor", xorByte.toString(16).padStart(2, "0")),
+      );
     }),
 
   /**

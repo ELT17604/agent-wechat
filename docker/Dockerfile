@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y \
 # ============================================
 # Frida + SQLCipher 4 (for WeChat DB key extraction)
 # ============================================
-RUN pip3 install frida-tools
+RUN pip3 install frida-tools cryptography
 RUN cd /tmp \
     && curl -L https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.6.1.tar.gz | tar xz \
     && cd sqlcipher-4.6.1 \

@@ -40,7 +40,7 @@ export function extractKeys(wechatPid: number): Record<string, string> {
         {
           timeout: 120_000,  // 2 min max
           encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
+          stdio: ["pipe", "inherit", "inherit"],
         }
       );
     } catch {
@@ -53,7 +53,13 @@ export function extractKeys(wechatPid: number): Record<string, string> {
       const output: ExtractKeysOutput = JSON.parse(
         fs.readFileSync(outPath, "utf-8")
       );
-      console.log(`[wechat-keys] Extracted ${Object.keys(output.keys).length} keys`);
+      const dbKeys = Object.keys(output.keys).filter(k => !k.startsWith("_"));
+      const hasImageKeys = !!output.keys["_image_aes"] && !!output.keys["_image_xor"];
+      console.log(`[wechat-keys] Extracted ${dbKeys.length} DB keys, image keys: ${hasImageKeys ? "yes" : "no"}`);
+      if (hasImageKeys) {
+        console.log(`[wechat-keys]   _image_aes: ${output.keys["_image_aes"]!.slice(0, 16)}...`);
+        console.log(`[wechat-keys]   _image_xor: 0x${output.keys["_image_xor"]}`);
+      }
       return output.keys;
     }
 
@@ -161,6 +167,7 @@ export function verifyStoredKeys(
   const failed: string[] = [];
 
   for (const [dbName, hexKey] of Object.entries(keys)) {
+    if (dbName.startsWith("_")) continue; // Skip non-DB entries (image keys, etc.)
     const t = Date.now();
     const dbPath = getDbPath(accountDir, dbName);
     const ok = verifyKey(dbPath, hexKey);
@@ -197,7 +204,7 @@ export function needsKeyExtraction(
 
   // Only require keys for DBs we actually query.
   // message_N.db and media_N.db are sharded — match by prefix.
-  const REQUIRED_EXACT = new Set(["session.db", "contact.db", "emoticon.db", "head_image.db"]);
+  const REQUIRED_EXACT = new Set(["session.db", "contact.db", "emoticon.db", "head_image.db", "hardlink.db"]);
   const REQUIRED_PREFIXES = ["message_", "media_"];
   const isRequired = (dbName: string) =>
     REQUIRED_EXACT.has(dbName) || REQUIRED_PREFIXES.some(p => dbName.startsWith(p));
@@ -223,8 +230,47 @@ export function needsKeyExtraction(
     return true;
   }
 
-  console.log(`[wechat-keys] ${Object.keys(storedKeys).length} keys stored, spot-check passed (total: ${Date.now() - t0}ms)`);
+  const hasImageAes = !!storedKeys["_image_aes"];
+  const hasImageXor = !!storedKeys["_image_xor"];
+  console.log(`[wechat-keys] ${Object.keys(storedKeys).length} keys stored, spot-check passed, image keys: aes=${hasImageAes} xor=${hasImageXor} (total: ${Date.now() - t0}ms)`);
   return false;
+}
+
+/**
+ * Get stored image decryption keys for a session + account.
+ *
+ * Image keys are stored in wechat_keys with reserved dbName values:
+ * - `_image_aes`: 32-char hex string (AES key = first 16 ASCII chars)
+ * - `_image_xor`: 2-char hex byte (e.g. "85") — may be absent if lazy-init not triggered
+ *
+ * Returns { aesKeyHex, xorByte? } or null if AES key not available.
+ */
+export function getImageKeys(
+  db: DatabaseInstance,
+  sessionId: string,
+  accountDir: string
+): { aesKeyHex: string; xorByte: number | null } | null {
+  const keys = getStoredKeys(db, sessionId, accountDir);
+  const aesHex = keys["_image_aes"];
+  if (!aesHex) return null;
+  const xorHex = keys["_image_xor"];
+  return {
+    aesKeyHex: aesHex,
+    xorByte: xorHex ? parseInt(xorHex, 16) : null,
+  };
+}
+
+/**
+ * Store a single key (e.g. derived _image_xor) into wechat_keys.
+ */
+export function storeSingleKey(
+  db: DatabaseInstance,
+  sessionId: string,
+  accountDir: string,
+  dbName: string,
+  hexKey: string,
+): void {
+  storeKeys(db, sessionId, accountDir, { [dbName]: hexKey });
 }
 
 /**

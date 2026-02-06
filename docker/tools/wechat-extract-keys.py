@@ -21,6 +21,7 @@ import glob
 import argparse
 import tempfile
 import time
+import struct
 
 # ── Frida script: find cipher_ctx, walk pointer chains, print candidates ───
 FRIDA_JS = r"""
@@ -218,6 +219,205 @@ def test_key(db_path, key):
     return None
 
 
+# ── Image encryption key extraction (via /proc/pid/mem, no Frida needed) ──────
+# WeChat Linux 4.x (BuildID: 71996acd55aadbb8cb3011344035702609180cf1)
+
+GOT_CONFIG_OFFSET = 0x8034838       # GOT entry for config singleton pointer
+CONFIG_VALUE_KEY_OFFSET = 0x1F8     # offset of obfuscated key string within ConfigValue
+XOR_BYTE_GLOBAL_OFFSET = 0x8049530  # global: XOR key byte (lazy-init, zero before first use)
+
+IMAGE_XOR_MASK = bytes.fromhex(
+    "5e780583f2236b8540bfebb8ab903062"
+    "fc5a071a767de41a637075835ebfac1e"
+)
+
+
+def get_wechat_module_base(pid):
+    """Find the base address of the 'wechat' module from /proc/pid/maps."""
+    with open(f"/proc/{pid}/maps") as f:
+        for line in f:
+            if "/wechat" in line:
+                return int(line.split("-")[0], 16)
+    raise RuntimeError("wechat module not found in /proc/pid/maps")
+
+
+def read_mem(pid, addr, size):
+    """Read `size` bytes from process memory at `addr`."""
+    with open(f"/proc/{pid}/mem", "rb") as f:
+        f.seek(addr)
+        return f.read(size)
+
+
+def read_u64(pid, addr):
+    return struct.unpack("<Q", read_mem(pid, addr, 8))[0]
+
+
+def read_u8(pid, addr):
+    return read_mem(pid, addr, 1)[0]
+
+
+def read_std_string(pid, addr):
+    """Read a libc++ std::string (SSO format) from memory.
+
+    Layout:
+    - byte 0: flag byte. If bit 0 set -> "long" (heap-allocated).
+      Otherwise -> "short" (inline, length = flag >> 1).
+    - Long: bytes 8-15 = length (u64), bytes 16-23 = data pointer (u64)
+    - Short: bytes 1..length = inline data
+    """
+    fb = read_u8(pid, addr)
+    if fb & 1:  # long string
+        length = read_u64(pid, addr + 8)
+        data_ptr = read_u64(pid, addr + 16)
+        return read_mem(pid, data_ptr, length)
+    else:  # short string (SSO)
+        length = fb >> 1
+        if length == 0:
+            return b""
+        return read_mem(pid, addr + 1, length)
+
+
+def deobfuscate_image_key(obfuscated):
+    """XOR the obfuscated key bytes with the known mask."""
+    result = bytearray(len(obfuscated))
+    for i in range(len(obfuscated)):
+        result[i] = obfuscated[i] ^ IMAGE_XOR_MASK[i % len(IMAGE_XOR_MASK)]
+    return result.decode("ascii")
+
+
+def extract_image_aes_key(pid):
+    """Extract the image AES key from WeChat's config singleton in memory.
+
+    Walks the config object at depth 2, looking for a std::string of length 32
+    at offset +0x1F8 that XOR-deobfuscates to a valid 32-char hex string.
+
+    Returns: 32-char hex string (e.g. "2db48e820850a7cff445fb86ce85a4fa")
+    """
+    base = get_wechat_module_base(pid)
+
+    config_ptr = read_u64(pid, base + GOT_CONFIG_OFFSET)
+    if config_ptr == 0:
+        raise RuntimeError("Config singleton is NULL")
+
+    # Scan depth-1 pointers in config object
+    for off1 in range(0, 0x800, 8):
+        try:
+            ptr1 = read_u64(pid, config_ptr + off1)
+            if ptr1 == 0 or ptr1 < 0x1000:
+                continue
+            # Scan depth-2 pointers
+            for off2 in range(0, 0x200, 8):
+                try:
+                    ptr2 = read_u64(pid, ptr1 + off2)
+                    if ptr2 == 0 or ptr2 < 0x1000:
+                        continue
+                    try:
+                        raw = read_std_string(pid, ptr2 + CONFIG_VALUE_KEY_OFFSET)
+                        if len(raw) == 32:
+                            decoded = deobfuscate_image_key(raw)
+                            if all(c in "0123456789abcdef" for c in decoded):
+                                return decoded
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    raise RuntimeError("Could not find AES key in config object. "
+                       "Make sure WeChat has sent/received at least one image.")
+
+
+def extract_image_xor_byte(pid):
+    """Read the XOR byte directly from WeChat's global config memory.
+
+    Returns the byte value, or None if not yet initialized (zero).
+    """
+    base = get_wechat_module_base(pid)
+    xor_byte = read_u8(pid, base + XOR_BYTE_GLOBAL_OFFSET)
+    if xor_byte == 0:
+        return None  # not yet initialized (lazy-init)
+    return xor_byte
+
+
+def find_xor_byte_from_dat(dat_path, aes_key_16):
+    """Derive the XOR byte from a .dat file by AES-decrypting the head
+    and checking known image trailers (JPEG FFD9, PNG IEND)."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives import padding
+
+    with open(dat_path, "rb") as f:
+        dat = f.read()
+
+    if dat[:6] != bytes.fromhex("070856320807"):
+        raise ValueError("Not a WeChat .dat file")
+
+    enc_chunk = int.from_bytes(dat[6:10], "little")
+    aes_ct = dat[15:15 + enc_chunk + 16]
+
+    cipher = Cipher(algorithms.AES(aes_key_16), modes.ECB())
+    dec = cipher.decryptor()
+    dec_padded = dec.update(aes_ct) + dec.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    dec_head = unpadder.update(dec_padded) + unpadder.finalize()
+
+    # JPEG: last 2 bytes are FF D9
+    if dec_head[:2] == b"\xff\xd8":
+        c1 = dat[-2] ^ 0xFF
+        c2 = dat[-1] ^ 0xD9
+        if c1 == c2:
+            return c1
+
+    # PNG: last 8 bytes are IEND chunk (49 45 4E 44 AE 42 60 82)
+    if dec_head[:4] == b"\x89PNG":
+        expected = bytes([0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82])
+        tail = dat[-8:]
+        xb = tail[0] ^ expected[0]
+        if all(tail[i] ^ xb == expected[i] for i in range(8)):
+            return xb
+
+    raise RuntimeError("Could not determine XOR byte from file trailer")
+
+
+def find_any_dat_file(account_dir):
+    """Find any full-size .dat image file for the account."""
+    for candidate in ["~/xwechat_files", "~/Documents/xwechat_files"]:
+        base = os.path.expanduser(candidate)
+        search = os.path.join(base, account_dir, "msg/attach/**/Img/*.dat")
+        files = glob.glob(search, recursive=True)
+        for f in files:
+            if not f.endswith(("_t.dat", "_h.dat", "_b.dat")):
+                return f
+    return None
+
+
+def extract_image_keys(pid, account_dir):
+    """Extract image encryption keys from memory.
+
+    AES key is always extracted from config singleton.
+    XOR byte is attempted from memory (may be zero if lazy-init not triggered).
+    If XOR byte unavailable, it will be derived lazily at media query time.
+
+    Returns: dict with "_image_aes" and optionally "_image_xor".
+    """
+    print("\nExtracting image encryption keys from memory...")
+    result = {}
+
+    aes_key_hex = extract_image_aes_key(pid)
+    result["_image_aes"] = aes_key_hex
+    print(f"  AES key: {aes_key_hex[:16]}... (32-char hex string)")
+
+    # Try memory for XOR byte (may be 0 if lazy-init not triggered)
+    xor_byte = extract_image_xor_byte(pid)
+    if xor_byte is not None:
+        result["_image_xor"] = f"{xor_byte:02x}"
+        print(f"  XOR byte: 0x{xor_byte:02x} (from memory)")
+    else:
+        print("  XOR byte: not yet initialized (will derive on first image access)")
+
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="Extract WeChat SQLCipher keys")
     parser.add_argument("--output", "-o", default=None,
@@ -315,6 +515,13 @@ def main():
         "note": "SQLCipher raw hex keys. Use with: PRAGMA key = \"x'<key>'\"",
         "keys": {name: info["key"] for name, info in sorted(results.items())},
     }
+
+    # Image encryption keys (from process memory, not Frida)
+    try:
+        image_keys = extract_image_keys(pid, account_dir)
+        output["keys"].update(image_keys)
+    except Exception as e:
+        print(f"  Image key extraction failed: {e}")
 
     with open(out_path, 'w') as f:
         json.dump(output, f, indent=2)

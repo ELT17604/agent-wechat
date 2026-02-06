@@ -1,6 +1,6 @@
 import { spawn, ChildProcess, execSync } from "child_process";
 import { eq, or, max, sql } from "drizzle-orm";
-import { getDb, sessions, chats, messages, syncState } from "../db/index.js";
+import { getDb, sessions, wechatKeys, syncState } from "../db/index.js";
 import { randomUUID } from "crypto";
 import type { Session, SessionStatus, LoginState } from "@thisnick/agent-wechat-shared";
 
@@ -39,6 +39,7 @@ function dbRowToSession(row: typeof sessions.$inferSelect): Session {
     vncPort: row.vncPort ?? 0,
     status: row.status as SessionStatus,
     loginState,
+    loggedInUser: row.loggedInUser ?? undefined,
     wechatPid: row.wechatPid ?? undefined,
     xvfbPid: row.xvfbPid ?? undefined,
     dbusPid: row.dbusPid ?? undefined,
@@ -351,8 +352,7 @@ export async function deleteSession(idOrName: string): Promise<void> {
 
   // Delete associated data
   db.delete(syncState).where(eq(syncState.sessionId, session.id)).run();
-  db.delete(messages).where(eq(messages.sessionId, session.id)).run();
-  db.delete(chats).where(eq(chats.sessionId, session.id)).run();
+  db.delete(wechatKeys).where(eq(wechatKeys.sessionId, session.id)).run();
   db.delete(sessions).where(eq(sessions.id, session.id)).run();
 
   // Delete Linux user

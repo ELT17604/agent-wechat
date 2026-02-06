@@ -116,48 +116,17 @@ export function initDb(): DatabaseInstance {
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
     CREATE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name);
 
-    -- Chats table
-    CREATE TABLE IF NOT EXISTS chats (
+    -- WeChat encryption keys (per-session, per-account)
+    CREATE TABLE IF NOT EXISTS wechat_keys (
       id TEXT PRIMARY KEY,
-      session_id TEXT REFERENCES sessions(id),
-      name TEXT NOT NULL,
-      avatar_description TEXT,
-      last_message_preview TEXT,
-      last_message_sender TEXT,
-      last_activity_at TEXT,
-      unread_count INTEGER DEFAULT 0,
-      is_group INTEGER DEFAULT 0,
-      is_pinned INTEGER DEFAULT 0,
-      search_terms TEXT,
-      scroll_position_hint INTEGER,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      account_dir TEXT NOT NULL,
+      db_name TEXT NOT NULL,
+      hex_key TEXT NOT NULL,
+      verified_at TEXT,
+      UNIQUE(session_id, account_dir, db_name)
     );
-    CREATE INDEX IF NOT EXISTS idx_chats_name ON chats(name);
-    CREATE INDEX IF NOT EXISTS idx_chats_session ON chats(session_id);
-
-    -- Messages table
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT REFERENCES sessions(id),
-      chat_id TEXT NOT NULL REFERENCES chats(id),
-      content_type TEXT NOT NULL,
-      content_text TEXT,
-      sender_name TEXT,
-      is_outgoing INTEGER DEFAULT 0,
-      timestamp_display TEXT,
-      timestamp_parsed TEXT,
-      adjacent_text_before TEXT,
-      adjacent_text_after TEXT,
-      is_downloaded INTEGER DEFAULT 0,
-      download_path TEXT,
-      metadata TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);
-    CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(chat_id, timestamp_parsed);
-    CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+    CREATE INDEX IF NOT EXISTS idx_wechat_keys_session_account ON wechat_keys(session_id, account_dir);
 
     -- Sync state table
     CREATE TABLE IF NOT EXISTS sync_state (

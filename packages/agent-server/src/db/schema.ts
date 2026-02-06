@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, index, unique } from "drizzle-orm/sqlite-core";
 
 // ============================================
 // SESSIONS (multi-user support)
@@ -12,7 +12,7 @@ export const sessions = sqliteTable("sessions", {
   vncPort: integer("vnc_port").unique(),
   status: text("status", { enum: ["stopped", "starting", "running", "stopping", "error"] }).notNull().default("stopped"),
   loginState: text("login_state").notNull().default("logged_out"),
-  loggedInUser: text("logged_in_user"),  // WeChat ID of logged-in user
+  loggedInUser: text("logged_in_user"),  // WeChat account dir (e.g. "wxid_xxx_abc123")
   wechatPid: integer("wechat_pid"),
   xvfbPid: integer("xvfb_pid"),
   dbusPid: integer("dbus_pid"),
@@ -25,55 +25,18 @@ export const sessions = sqliteTable("sessions", {
 ]);
 
 // ============================================
-// CHATS (threads/conversations)
+// WECHAT KEYS (per-session, per-account encryption keys)
 // ============================================
-export const chats = sqliteTable("chats", {
+export const wechatKeys = sqliteTable("wechat_keys", {
   id: text("id").primaryKey(),
-  sessionId: text("session_id").references(() => sessions.id),
-  name: text("name").notNull(),
-  imageHash: text("image_hash"),  // MD5 hash of avatar for identity matching
-  avatarDescription: text("avatar_description"),
-  lastMessagePreview: text("last_message_preview"),
-  lastMessageSender: text("last_message_sender"),
-  lastActivityAt: text("last_activity_at"),
-  unreadCount: integer("unread_count").default(0),
-  isGroup: integer("is_group", { mode: "boolean" }).default(false),
-  isPinned: integer("is_pinned", { mode: "boolean" }).default(false),
-  isMuted: integer("is_muted", { mode: "boolean" }).default(false),
-  searchTerms: text("search_terms"),
-  scrollPositionHint: integer("scroll_position_hint"),
-  createdAt: text("created_at").default("(datetime('now'))"),
-  updatedAt: text("updated_at").default("(datetime('now'))"),
+  sessionId: text("session_id").notNull().references(() => sessions.id),
+  accountDir: text("account_dir").notNull(),  // e.g. "wxid_xxx_abc123"
+  dbName: text("db_name").notNull(),          // e.g. "session.db", "contact.db"
+  hexKey: text("hex_key").notNull(),          // 64-char hex AES-256 key
+  verifiedAt: text("verified_at"),
 }, (table) => [
-  index("idx_chats_name").on(table.name),
-  index("idx_chats_session").on(table.sessionId),
-  index("idx_chats_image_hash").on(table.imageHash),
-]);
-
-// ============================================
-// MESSAGES
-// ============================================
-export const messages = sqliteTable("messages", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id").references(() => sessions.id),
-  chatId: text("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
-  contentType: text("content_type").notNull(),
-  contentText: text("content_text"),
-  senderName: text("sender_name"),
-  isOutgoing: integer("is_outgoing", { mode: "boolean" }).default(false),
-  timestampDisplay: text("timestamp_display"),
-  timestampParsed: text("timestamp_parsed"),
-  adjacentTextBefore: text("adjacent_text_before"),
-  adjacentTextAfter: text("adjacent_text_after"),
-  isDownloaded: integer("is_downloaded", { mode: "boolean" }).default(false),
-  downloadPath: text("download_path"),
-  metadata: text("metadata"),
-  createdAt: text("created_at").default("(datetime('now'))"),
-  updatedAt: text("updated_at").default("(datetime('now'))"),
-}, (table) => [
-  index("idx_messages_chat").on(table.chatId),
-  index("idx_messages_time").on(table.chatId, table.timestampParsed),
-  index("idx_messages_session").on(table.sessionId),
+  unique("uq_wechat_keys").on(table.sessionId, table.accountDir, table.dbName),
+  index("idx_wechat_keys_session_account").on(table.sessionId, table.accountDir),
 ]);
 
 // ============================================
@@ -100,10 +63,8 @@ export const context = sqliteTable("context", {
 // Type exports
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
-export type Chat = typeof chats.$inferSelect;
-export type NewChat = typeof chats.$inferInsert;
-export type Message = typeof messages.$inferSelect;
-export type NewMessage = typeof messages.$inferInsert;
+export type WechatKey = typeof wechatKeys.$inferSelect;
+export type NewWechatKey = typeof wechatKeys.$inferInsert;
 export type SyncState = typeof syncState.$inferSelect;
 export type NewSyncState = typeof syncState.$inferInsert;
 export type Context = typeof context.$inferSelect;

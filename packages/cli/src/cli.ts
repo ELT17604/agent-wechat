@@ -175,23 +175,11 @@ const chatsCmd = program
 
 chatsCmd
   .command("list")
-  .description("List chats from database")
+  .description("List chats from WeChat database")
   .option("-l, --limit <number>", "Maximum number of chats", "50")
-  .option("-u, --unread", "Show only unread chats")
   .option("-j, --json", "Output as JSON")
   .action(async (opts) => {
-    await cmdChats(getClient(), parseInt(opts.limit, 10), opts.unread ?? false, opts.json ?? false);
-  });
-
-chatsCmd
-  .command("sync")
-  .description("Sync chat list from WeChat UI")
-  .option("-m, --max-chats <number>", "Maximum chats to sync", "20")
-  .option("-t, --timeout <seconds>", "Timeout in seconds", "300")
-  .action(async (opts) => {
-    const maxChats = parseInt(opts.maxChats, 10);
-    const timeoutMs = parseInt(opts.timeout, 10) * 1000;
-    await cmdChatSync(getClientOptions(), maxChats, timeoutMs);
+    await cmdChats(getClient(), parseInt(opts.limit, 10), opts.json ?? false);
   });
 
 program
@@ -202,26 +190,10 @@ program
   });
 
 program
-  .command("messages <chatId>")
-  .description("Get messages from a chat")
-  .argument("[limit]", "Maximum number of messages")
-  .action(async (chatId: string, limit?: string) => {
-    await cmdMessages(getClient(), chatId, limit ? parseInt(limit, 10) : undefined);
-  });
-
-program
   .command("send <chatId> <message...>")
   .description("Send a message to a chat")
   .action(async (chatId: string, messageParts: string[]) => {
     await cmdSend(getClient(), chatId, messageParts.join(" "));
-  });
-
-program
-  .command("sync <chatId>")
-  .description("Sync messages from WeChat UI")
-  .argument("[maxMessages]", "Maximum messages to sync")
-  .action(async (chatId: string, maxMessages?: string) => {
-    await cmdSync(getClient(), chatId, maxMessages ? parseInt(maxMessages, 10) : undefined);
   });
 
 // ============================================
@@ -331,8 +303,8 @@ async function cmdLogin(options: ClientOptions, timeoutMs: number = 300_000, new
   }
 }
 
-async function cmdChats(client: Client, limit: number = 50, unreadOnly: boolean = false, json: boolean = false) {
-  const chats = await client.chats.list.query({ limit, unreadOnly });
+async function cmdChats(client: Client, limit: number = 50, json: boolean = false) {
+  const chats = await client.chats.list.query({ limit });
 
   if (json) {
     console.log(JSON.stringify(chats, null, 2));
@@ -340,73 +312,22 @@ async function cmdChats(client: Client, limit: number = 50, unreadOnly: boolean 
   }
 
   if (chats.length === 0) {
-    console.log("No chats found. Try syncing first with: pnpm cli chats sync");
+    console.log("No chats found. Make sure you're logged in.");
     return;
   }
 
   console.log(`Found ${chats.length} chat(s):\n`);
-  console.log("ID                                    Unread  Group  Name");
-  console.log("-".repeat(80));
+
+  // Chat ID column width based on actual data
+  const maxIdLen = Math.max(10, ...chats.map(c => c.username?.length ?? c.id.length));
+  const idHeader = "Chat ID".padEnd(maxIdLen);
+  console.log(`${idHeader}  Unread  Group  Name`);
+  console.log("-".repeat(maxIdLen + 30));
   for (const chat of chats) {
+    const id = (chat.username ?? chat.id).padEnd(maxIdLen);
     const unread = chat.unreadCount > 0 ? String(chat.unreadCount).padStart(2) : "  ";
     const group = chat.isGroup ? "  Y  " : "     ";
-    console.log(`${chat.id}  ${unread}    ${group}  ${chat.name}`);
-  }
-}
-
-async function cmdChatSync(options: ClientOptions, maxChats: number = 20, timeoutMs: number = 300_000) {
-  console.log(`Syncing chat list (max ${maxChats} chats)...\n`);
-
-  const { client, close } = createSubscriptionClient(options);
-  let subscription: { unsubscribe: () => void } | null = null;
-
-  // Handle Ctrl+C to abort subscription
-  const abortHandler = () => {
-    console.log("\n\nSync cancelled.");
-    if (subscription) {
-      subscription.unsubscribe();
-    }
-    close();
-    process.exit(0);
-  };
-  process.on("SIGINT", abortHandler);
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      subscription = client.chats.syncSubscription.subscribe(
-        { maxChats, timeoutMs },
-        {
-          onData: (event) => {
-            switch (event.type) {
-              case "status":
-                console.log(`Status: ${event.message}`);
-                break;
-              case "sync_progress":
-                console.log(`Progress: ${event.processedCount} chats processed`);
-                break;
-              case "sync_complete":
-                console.log(`\nSync complete! ${event.count} chats in database.`);
-                resolve();
-                break;
-              case "error":
-                console.error(`\nError: ${event.message}`);
-                reject(new Error(event.message));
-                break;
-            }
-          },
-          onError: (err) => {
-            console.error("\nConnection error:", err.message);
-            reject(err);
-          },
-          onComplete: () => {
-            // Subscription completed normally
-          },
-        }
-      );
-    });
-  } finally {
-    process.removeListener("SIGINT", abortHandler);
-    close();
+    console.log(`${id}  ${unread}    ${group}  ${chat.name}`);
   }
 }
 
@@ -423,22 +344,6 @@ async function cmdFind(client: Client, name: string) {
   }
 }
 
-async function cmdMessages(client: Client, chatId: string, limit?: number) {
-  const messages = await client.messages.get.query({ chatId, limit });
-  if (messages.length === 0) {
-    console.log("No messages found. Try syncing first.");
-    return;
-  }
-
-  console.log(`Found ${messages.length} messages:\n`);
-  for (const msg of messages) {
-    const sender = msg.isOutgoing ? "You" : (msg.senderName || "Unknown");
-    const time = msg.timestampDisplay || msg.timestampParsed || "";
-    const content = msg.contentText || `[${msg.contentType}]`;
-    console.log(`  [${time}] ${sender}: ${content}`);
-  }
-}
-
 async function cmdSend(client: Client, chatId: string, text: string) {
   console.log(`Sending message to ${chatId}...`);
   const result = await client.messages.send.mutate({ chatId, text });
@@ -452,12 +357,6 @@ async function cmdSend(client: Client, chatId: string, text: string) {
     console.error(`Failed to send message: ${result.error || "Unknown error"}`);
     process.exit(1);
   }
-}
-
-async function cmdSync(client: Client, chatId: string, maxMessages?: number) {
-  console.log(`Syncing messages for chat ${chatId}...`);
-  const result = await client.messages.sync.mutate({ chatId, maxMessages });
-  console.log(`Synced ${result.count} messages.`);
 }
 
 async function cmdScreenshot(client: Client, outputPath: string) {

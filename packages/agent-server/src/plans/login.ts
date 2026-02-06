@@ -1,8 +1,11 @@
 import { z } from "zod";
-import type { Plan, ActionParams, SelectedAction, PlanArgs } from "../ia/types.js";
+import type { Plan, ActionParams, SelectedAction } from "../ia/types.js";
 import { LoginActions, PopupActions, WindowActions, CommonActions } from "../ia/actions.js";
-import { ContactCardActions } from "../ia/index.js";
-import { getSessionLoggedInUser, clearSessionChatData, updateSessionLoggedInUser } from "../db/queries.js";
+import { eq } from "drizzle-orm";
+import { sessions } from "../db/schema.js";
+import { getSessionLoggedInUser, clearSessionData, updateSessionLoggedInUser } from "../db/queries.js";
+import { findAccountDir, findWechatPid } from "../lib/wechat-db.js";
+import { extractKeys, storeKeys, needsKeyExtraction } from "../lib/wechat-keys.js";
 
 /**
  * Login plan params
@@ -16,35 +19,37 @@ const loginParamsSchema = z.object({
 });
 
 /**
- * Login phases - minimal tracking, most state derived from IAState/AppState:
+ * Login phases:
  * - authenticating: in login_* views (derived, no tracking needed)
- * - maximized: we sent maximize command, now click avatar
- * - contact_card_read: we saw contact card and grabbed ID, now dismiss
+ * - maximized: we sent maximize command, now detect user
+ * - detecting_user: scan /proc/pid/fd for account directory
+ * - extracting_keys: run Frida key extraction (~20s)
  * - done: complete
  */
-type LoginPhase = "authenticating" | "maximized" | "contact_card_read" | "done";
+type LoginPhase = "authenticating" | "maximized" | "detecting_user" | "extracting_keys" | "done";
 
 interface LoginPlanState {
   phase: LoginPhase;
-  extractedUserId?: string;
+  accountDir?: string;
   lastEmittedQr?: string;
   emittedPhoneConfirm?: boolean;
+  detectRetries: number;
 }
 
 /**
  * Login Plan
  *
  * Navigates the WeChat login flow from any state to logged-in state.
- * Also extracts the logged-in user's WeChat ID from their contact card.
+ * After login, detects the user account via /proc/pid/fd and extracts
+ * SQLCipher encryption keys from WeChat process memory.
  *
  * States handled:
  * - login_qr: Wait for QR code scan, emit QR to client
  * - login_account: Click "Log In" or "Switch Account"
  * - login_phone_confirm: Wait for phone confirmation, emit to client
  * - login_loading: Wait for app to load
- * - chat/chat_open: Maximize, click avatar to get contact card, extract user ID
+ * - chat/chat_open: Maximize, detect user, extract keys
  * - popup: Dismiss any popup dialogs
- * - contactCard: Extract WeChat ID, dismiss
  */
 export const loginPlan: Plan<LoginParams, LoginPlanState> = {
   id: "login",
@@ -54,39 +59,19 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
   initialPlanState: () => ({
     phase: "authenticating",
     emittedPhoneConfirm: false,
+    detectRetries: 0,
   }),
 
   isGoalReached: ({ state, planState }) => {
     return (
       (state.mainWindow.view === "chat" || state.mainWindow.view === "chat_open") &&
       state.popup === null &&
-      state.contactCard === null &&
       planState.phase === "done"
     );
   },
 
   selectAction: ({ state, params, identified, planState, db, sessionId }): SelectedAction | null => {
     const mainMeta = identified.mainWindow?.metadata;
-
-    // === CONTACT CARD (separate FSM) ===
-    if (state.contactCard !== null) {
-      // Grab the ID (plan knows this is self-user context)
-      if (state.contactCard.wechatId && !planState.extractedUserId) {
-        planState.extractedUserId = state.contactCard.wechatId;
-        // Clear stale chat data if account switched
-        const previousUser = getSessionLoggedInUser(db, sessionId);
-        if (previousUser && previousUser !== state.contactCard.wechatId) {
-          clearSessionChatData(db, sessionId);
-        }
-        updateSessionLoggedInUser(db, sessionId, state.contactCard.wechatId);
-      }
-      planState.phase = "contact_card_read";
-      // Dismiss the card
-      return {
-        action: ContactCardActions.DISMISS,
-        metadata: identified.contactCard?.metadata,
-      };
-    }
 
     // === POPUPS (error/confirm/info) ===
     if (state.popup !== null && identified.popup) {
@@ -172,37 +157,123 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
           };
         }
 
-        // Phase: maximized -> click avatar (contact card will open)
+        // Phase: maximized -> detect user account via /proc/pid/fd
         if (planState.phase === "maximized") {
-          const frameBounds = (mainMeta as { frame?: { bounds?: { x: number; y: number } } } | undefined)?.frame?.bounds;
-          if (frameBounds) {
+          planState.phase = "detecting_user";
+          return { action: CommonActions.WAIT, metadata: mainMeta };
+        }
+
+        // Phase: detecting_user -> find account dir from WeChat process
+        if (planState.phase === "detecting_user") {
+          // Get PID from session, or detect it dynamically (for default session
+          // started by entrypoint.sh where wechatPid isn't tracked in DB)
+          // Find WeChat PID: try stored PID first, fall back to pgrep.
+          // Stored PID may be stale after container rebuild.
+          let wechatPid = db.select({ wechatPid: sessions.wechatPid })
+            .from(sessions).where(eq(sessions.id, sessionId)).get()?.wechatPid;
+
+          let accountDir: string | null = null;
+          if (wechatPid) {
+            accountDir = findAccountDir(wechatPid);
+          }
+
+          // Stored PID failed — re-detect
+          if (!accountDir) {
+            wechatPid = findWechatPid();
+            if (wechatPid) {
+              accountDir = findAccountDir(wechatPid);
+              // Update stored PID
+              db.update(sessions)
+                .set({ wechatPid, updatedAt: new Date().toISOString() })
+                .where(eq(sessions.id, sessionId))
+                .run();
+            }
+          }
+
+          if (wechatPid && accountDir) {
+              planState.accountDir = accountDir;
+
+              // Check if account changed
+              const previousUser = getSessionLoggedInUser(db, sessionId);
+              if (previousUser && previousUser !== accountDir) {
+                clearSessionData(db, sessionId);
+              }
+              updateSessionLoggedInUser(db, sessionId, accountDir);
+
+              // Check if stored keys are valid (verifies with sqlcipher)
+              if (!needsKeyExtraction(db, sessionId, accountDir)) {
+                // All keys valid - skip extraction
+                planState.phase = "done";
+                return {
+                  action: {
+                    type: "sequence",
+                    actions: [
+                      {
+                        type: "emit",
+                        event: { type: "login_success", userId: accountDir },
+                      },
+                      CommonActions.WAIT_SHORT,
+                    ],
+                  },
+                  metadata: mainMeta,
+                };
+              }
+
+              // Keys missing or invalid - extract
+              planState.phase = "extracting_keys";
+              return {
+                action: {
+                  type: "sequence",
+                  actions: [
+                    {
+                      type: "emit",
+                      event: { type: "status", message: "Getting your WeChat messages..." },
+                    },
+                    CommonActions.WAIT_SHORT,
+                  ],
+                },
+                metadata: mainMeta,
+              };
+          }
+
+          // Detection failed - retry up to 10 times (WeChat may still be starting)
+          planState.detectRetries++;
+          if (planState.detectRetries >= 10) {
+            // Give up on detection, emit success without keys
+            planState.phase = "done";
             return {
               action: {
                 type: "sequence",
                 actions: [
-                  { type: "click", x: frameBounds.x + 31, y: frameBounds.y + 41 },
-                  CommonActions.WAIT,
+                  {
+                    type: "emit",
+                    event: { type: "login_success" },
+                  },
+                  CommonActions.WAIT_SHORT,
                 ],
               },
               metadata: mainMeta,
             };
           }
-          // No frame bounds - skip user extraction, go to done
-          planState.phase = "done";
-          return {
-            action: {
-              type: "sequence",
-              actions: [
-                { type: "emit", event: { type: "login_success" } },
-                CommonActions.WAIT_SHORT,
-              ],
-            },
-            metadata: mainMeta,
-          };
+          return { action: { type: "wait", ms: 2000 }, metadata: mainMeta };
         }
 
-        // Phase: contact_card_read -> card dismissed, emit success, done
-        if (planState.phase === "contact_card_read") {
+        // Phase: extracting_keys -> run key extraction (~20s)
+        if (planState.phase === "extracting_keys") {
+          const sessionRow2 = db.select({ wechatPid: sessions.wechatPid })
+            .from(sessions).where(eq(sessions.id, sessionId)).get();
+          const wechatPid = sessionRow2?.wechatPid ?? findWechatPid();
+
+          if (wechatPid && planState.accountDir) {
+            try {
+              const keys = extractKeys(wechatPid);
+              storeKeys(db, sessionId, planState.accountDir, keys);
+            } catch (error) {
+              console.error("[login] Key extraction failed:", error);
+              // Continue anyway - keys can be extracted later
+            }
+          }
+
           planState.phase = "done";
           return {
             action: {
@@ -212,7 +283,7 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
                   type: "emit",
                   event: {
                     type: "login_success",
-                    userId: planState.extractedUserId,
+                    userId: planState.accountDir,
                   },
                 },
                 CommonActions.WAIT_SHORT,

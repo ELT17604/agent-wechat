@@ -105,24 +105,6 @@ export interface SearchResult {
   bounds?: Bounds;
 }
 
-/**
- * Visible chat in the list (from a11y + image matching)
- */
-export interface VisibleChat {
-  id: string;
-  name: string;
-  imageHash: string | null;
-  bounds?: Bounds;
-  unreadCount: number;
-  time?: string;
-  pinned: boolean;
-  muted: boolean;
-  preview?: string;
-  sender?: string;  // If present, indicates group chat
-  matchConfidence: "name_unique" | "name_and_image" | "image_only" | "new";
-  shouldUpdateName: boolean;
-}
-
 export interface MainWindowState {
   view: MainWindowView;
   isLoggedIn: boolean;
@@ -137,18 +119,9 @@ export interface MainWindowState {
   searchQuery?: string;
   searchResults?: SearchResult[];
 
-  // Chat list sync (populated during reduce)
-  visibleChats?: VisibleChat[];
-
-  // Chat selection tracking (from a11y states)
-  focusedChatIndex?: number;
-  focusedChatName?: string;  // For skip detection in plan
-  selectedChatIndex?: number;
-
   // Chat open specific (when view === 'chat_open')
   openedChatName?: string;
   openedChatIsGroup?: boolean;
-  openedChatImageHash?: string;  // Avatar hash for identity (undefined if placeholder)
   selectedChatBounds?: Bounds;
 
   // Window control bounds (captured from frame's toolbar)
@@ -320,35 +293,6 @@ export interface Execution<TParams = unknown, TPlanState = unknown> {
   emit: (event: SubscriptionEvent) => void;
   /** Plan-local state - not persisted, lives only during execution */
   planState: TPlanState;
-}
-
-// ============================================
-// Chat & Message (for DB)
-// ============================================
-
-export interface Chat {
-  id: string;
-  name: string;
-  avatarHash?: string;
-  unreadCount: number;
-  lastMessagePreview?: string;
-  lastMessageTime?: string;
-  lastMessageSender?: string;
-  pinned: boolean;
-  muted: boolean;
-  bounds?: Bounds;
-}
-
-export interface Message {
-  id: string;
-  chatId?: string;
-  content: string;
-  senderName?: string;
-  timestamp?: string;
-  outgoing: boolean;
-  type: string;
-  metadata?: Record<string, unknown>;
-  bounds?: Bounds;
 }
 
 // ============================================

@@ -1,4 +1,4 @@
-import type { A11yNode, Chat, Message, Bounds } from "./types.js";
+import type { A11yNode, Bounds } from "./types.js";
 import { querySelector } from "./selectors.js";
 
 /**
@@ -11,95 +11,6 @@ function hashString(s: string): string {
     hash |= 0;
   }
   return Math.abs(hash).toString(36);
-}
-
-/**
- * Parse a chat from a11y list item.
- *
- * WeChat format: "Name [N unread message(s)] [Sender:] Preview Time [Muted] [Pinned]"
- */
-export function parseChat(item: A11yNode): Chat {
-  const raw = item.name ?? "";
-
-  // Extract muted status
-  const muted = /Mute Notif/i.test(raw);
-  let text = raw.replace(/\s*Mute Notif\w*\s*$/i, "");
-
-  // Extract time (HH:MM at end)
-  const timeMatch = text.match(/\s(\d{1,2}:\d{2})\s*$/);
-  const lastMessageTime = timeMatch ? timeMatch[1] : undefined;
-  if (timeMatch) {
-    text = text.slice(0, timeMatch.index).trim();
-  }
-
-  // Extract pinned status
-  const pinned = text.includes("Stuck on Top");
-  text = text.replace("Stuck on Top", "").trim();
-
-  // Extract unread count and parse name/preview
-  let name = "";
-  let unreadCount = 0;
-  let lastMessagePreview: string | undefined;
-  let lastMessageSender: string | undefined;
-
-  const unreadMatch = text.match(/^(.+?)\s+(\d+)\s+unread message\(s\)\s*(.*)$/);
-  if (unreadMatch) {
-    name = unreadMatch[1].trim();
-    unreadCount = parseInt(unreadMatch[2]);
-    let remainder = unreadMatch[3].trim();
-    // Remove [N] prefix if present
-    remainder = remainder.replace(/^\[\d+\]\s*/, "");
-
-    // Check for sender: message format
-    const senderMatch = remainder.match(/^([^:]+):\s*(.+)$/);
-    if (senderMatch) {
-      lastMessageSender = senderMatch[1].trim();
-      lastMessagePreview = senderMatch[2].trim();
-    } else if (remainder) {
-      lastMessagePreview = remainder;
-    }
-  } else {
-    // No unread, check for sender: message
-    const colonMatch = text.match(/^(.+?)\s+([^:\s]+):\s*(.+)$/);
-    if (colonMatch) {
-      name = colonMatch[1].trim();
-      lastMessageSender = colonMatch[2].trim();
-      lastMessagePreview = colonMatch[3].trim();
-    } else {
-      name = text.trim();
-    }
-  }
-
-  const stableKey = name || raw;
-
-  return {
-    id: `chat_${hashString(stableKey)}`,
-    name,
-    unreadCount,
-    lastMessagePreview,
-    lastMessageTime,
-    lastMessageSender,
-    pinned,
-    muted,
-    bounds: item.bounds,
-  };
-}
-
-/**
- * Parse a message from a11y list item.
- */
-export function parseMessage(item: A11yNode, chatId?: string): Message {
-  const raw = item.name ?? "";
-  const isTimestamp = /^\d{1,2}:\d{2}$/.test(raw.trim());
-
-  return {
-    id: `msg_${hashString(raw + (item.bounds?.y ?? 0))}`,
-    chatId,
-    content: raw,
-    type: isTimestamp ? "timestamp" : "text",
-    outgoing: false, // TODO: detect from position or styling
-    bounds: item.bounds,
-  };
 }
 
 /**

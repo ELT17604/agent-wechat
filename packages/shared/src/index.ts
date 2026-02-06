@@ -23,20 +23,9 @@ export {
   listChatsParamsSchema,
   findChatParamsSchema,
   getChatParamsSchema,
-  openChatParamsSchema,
   // Message schemas
-  messageContentTypeSchema,
-  messageSchema,
   sendParamsSchema,
   sendResultSchema,
-  getMessagesParamsSchema,
-  downloadAttachmentParamsSchema,
-  downloadAttachmentResultSchema,
-  // Sync schemas
-  syncOptionsSchema,
   // Agent config schema
   agentConfigSchema,
-  // Database row schemas
-  dbChatRowSchema,
-  dbMessageRowSchema,
 } from "./schemas/index.js";

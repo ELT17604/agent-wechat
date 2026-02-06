@@ -1,10 +1,7 @@
-import type { IAState, SearchResult, FrameIdentifyMetadata, Bounds, A11yNode, VisibleChat, ReduceArgs } from "../types.js";
+import type { IAState, SearchResult, FrameIdentifyMetadata, Bounds, A11yNode, ReduceArgs } from "../types.js";
 import { querySelector, findAncestor } from "../selectors.js";
 import { extractActiveChatId } from "../helpers.js";
 import { extractWindowControlBounds } from "./base.js";
-import { parseChatHead } from "../../lib/chat-parser.js";
-import { matchChatWithDb, DEFAULT_AVATAR_HASH } from "../../lib/chat-matcher.js";
-import { extractChatHeadHashSync } from "../../lib/chat-image.js";
 
 /**
  * Helper to check base chat view conditions.
@@ -21,8 +18,7 @@ function isChatView(a11y: A11yNode): boolean {
 }
 
 /**
- * Base chat reducer - handles search state, focus tracking, and sync progress.
- * Called by both chat and chat_open states.
+ * Base chat reducer - handles search state and window bounds.
  */
 function chatReduceBase(
   args: ReduceArgs<FrameIdentifyMetadata>
@@ -30,10 +26,6 @@ function chatReduceBase(
   selectedChatId?: string;
   searchQuery?: string;
   searchResults?: SearchResult[];
-  visibleChats?: VisibleChat[];
-  focusedChatIndex?: number;
-  focusedChatName?: string;
-  selectedChatIndex?: number;
   closeButtonBounds?: Bounds;
   minimizeButtonBounds?: Bounds;
   maximizeButtonBounds?: Bounds;
@@ -63,45 +55,10 @@ function chatReduceBase(
 
   const windowBounds = extractWindowControlBounds(metadata?.frame);
 
-  // Find list items and track focused/selected items by AT-SPI state
-  const listItems = chatList?.children?.filter((c) => c.role === "list-item") ?? [];
-  const focusedIndex = listItems.findIndex(item => item.states?.includes("FOCUSED"));
-  const selectedIndex = listItems.findIndex(item => item.states?.includes("SELECTED"));
-  const focusedItem = focusedIndex >= 0 ? listItems[focusedIndex] : undefined;
-  const focusedIsSelected = focusedIndex >= 0 && focusedIndex === selectedIndex;
-
-  // Parse visible chats for name-based matching (still useful for watchers)
-  const visibleChats: VisibleChat[] = [];
-  for (const item of listItems) {
-    if (!item.name) continue;
-
-    const parseResult = parseChatHead(item.name);
-    const match = matchChatWithDb(args.db, parseResult, "");
-
-    visibleChats.push({
-      id: match.id,
-      name: match.name,
-      imageHash: null,
-      bounds: item.bounds,
-      unreadCount: parseResult.unreadCount,
-      time: parseResult.time,
-      pinned: parseResult.pinned,
-      muted: parseResult.muted,
-      preview: parseResult.candidates[0]?.preview,
-      sender: parseResult.candidates[0]?.sender,
-      matchConfidence: match.confidence,
-      shouldUpdateName: match.shouldUpdateName,
-    });
-  }
-
   return {
     selectedChatId: prev.mainWindow.selectedChatId,
     searchQuery,
     searchResults,
-    visibleChats: visibleChats.length > 0 ? visibleChats : prev.mainWindow.visibleChats,
-    focusedChatIndex: focusedIndex >= 0 ? focusedIndex : undefined,
-    focusedChatName: focusedItem?.name,
-    selectedChatIndex: selectedIndex >= 0 ? selectedIndex : undefined,
     ...windowBounds,
   };
 }
@@ -116,9 +73,6 @@ function findSelectedChatItem(a11y: A11yNode): A11yNode | undefined {
 
 /**
  * Chat state - no chat selected.
- *
- * In this state, keyboard navigation (Page_Down, Home, etc.) works on the chat list.
- * This is detected by no SELECTED item in the Chats list.
  */
 export const chatState: IAState<FrameIdentifyMetadata> = {
   fsm: "mainWindow",
@@ -127,7 +81,6 @@ export const chatState: IAState<FrameIdentifyMetadata> = {
   identify: ({ a11y }) => {
     if (!isChatView(a11y)) return { identified: false };
 
-    // No SELECTED item in chat list = no chat open
     const selectedItem = findSelectedChatItem(a11y);
     if (selectedItem) return { identified: false };
 
@@ -146,10 +99,8 @@ export const chatState: IAState<FrameIdentifyMetadata> = {
         view: "chat",
         isLoggedIn: true,
         ...base,
-        // Clear chat_open specific fields
         openedChatName: undefined,
         openedChatIsGroup: undefined,
-        openedChatImageHash: undefined,
         selectedChatBounds: undefined,
       },
     };
@@ -158,9 +109,6 @@ export const chatState: IAState<FrameIdentifyMetadata> = {
 
 /**
  * Chat open state - a chat is selected and showing messages.
- *
- * In this state, keyboard navigation affects the message view, not the chat list.
- * This is detected by a SELECTED item in the Chats list.
  */
 export const chatOpenState: IAState<FrameIdentifyMetadata> = {
   fsm: "mainWindow",
@@ -169,7 +117,6 @@ export const chatOpenState: IAState<FrameIdentifyMetadata> = {
   identify: ({ a11y }) => {
     if (!isChatView(a11y)) return { identified: false };
 
-    // SELECTED item in chat list = chat is open
     const selectedItem = findSelectedChatItem(a11y);
     if (!selectedItem) return { identified: false };
 
@@ -180,17 +127,13 @@ export const chatOpenState: IAState<FrameIdentifyMetadata> = {
   },
 
   reduce: (args) => {
-    const { a11y, screenshot } = args;
+    const { a11y } = args;
     const base = chatReduceBase(args);
 
     // Extract opened chat name from header area
-    // The name label is in a sibling subtree to Chat Info button, so find by position:
-    // - Header region: x > 272 (after chat list), y < 70 (header row)
-    // - Look for a label with non-empty name in that region
     const chatList = querySelector(a11y, 'list[name="Chats"]');
     const chatListRight = chatList?.bounds ? chatList.bounds.x + chatList.bounds.width : 272;
 
-    // Find all labels and filter to header region
     const allLabels: A11yNode[] = [];
     const collectLabels = (node: A11yNode) => {
       if (node.role === "label" && node.name && node.bounds) {
@@ -200,38 +143,28 @@ export const chatOpenState: IAState<FrameIdentifyMetadata> = {
     };
     collectLabels(a11y);
 
-    // Header label: after chat list, in top 70px, with substantial name
     const headerLabel = allLabels.find(label =>
       label.bounds &&
       label.bounds.x > chatListRight &&
       label.bounds.y < 70 &&
       label.name &&
       label.name.length > 0 &&
-      !label.name.includes("Send") // Exclude button labels
+      !label.name.includes("Send")
     );
     const rawOpenedChatName = headerLabel?.name;
 
-    // Detect group chat via "(n)" member count pattern in header
-    // Groups show: "Group Name (123)" where 123 is member count
+    // Detect group chat via "(n)" member count pattern
     const memberCountMatch = rawOpenedChatName?.match(/\((\d+)\)$/);
     const isGroup = memberCountMatch !== null;
     const openedChatName = isGroup
       ? rawOpenedChatName?.replace(/\s*\(\d+\)$/, "").trim()
       : rawOpenedChatName;
 
-    // Find the selected chat in the list by SELECTED state (more reliable than name matching)
+    // Find the selected chat bounds
     const selectedItem = chatList?.children?.find(item =>
       item.states?.includes("SELECTED")
     );
     const selectedChatBounds = selectedItem?.bounds;
-
-    // Extract image hash from selected item bounds
-    const rawImageHash = extractChatHeadHashSync(screenshot, selectedChatBounds);
-    // Filter out placeholder hash - don't store or use for matching
-    // Convert null to undefined for type compatibility
-    const imageHash = (rawImageHash === DEFAULT_AVATAR_HASH || rawImageHash === null)
-      ? undefined
-      : rawImageHash;
 
     // Try to get active chat ID
     const msgList = querySelector(a11y, 'list[name="Messages"]');
@@ -252,7 +185,6 @@ export const chatOpenState: IAState<FrameIdentifyMetadata> = {
         selectedChatId,
         openedChatName,
         openedChatIsGroup: isGroup,
-        openedChatImageHash: imageHash,
         selectedChatBounds,
       },
     };

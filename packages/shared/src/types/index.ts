@@ -18,6 +18,7 @@ export interface Session {
   vncPort: number;
   status: SessionStatus;
   loginState: LoginState;
+  loggedInUser?: string;  // WeChat account dir (e.g. "wxid_xxx_abc123")
   wechatPid?: number;
   xvfbPid?: number;
   dbusPid?: number;
@@ -79,38 +80,24 @@ export type LoginSubscriptionEvent =
   | { type: "login_timeout" }                     // QR expired
   | { type: "error"; message: string };           // No QR found, etc.
 
-// Sync subscription events (for chat list sync)
-export type SyncSubscriptionEvent =
-  | { type: "status"; message: string }           // Status update
-  | { type: "sync_progress"; processedCount: number }  // Progress (chats processed)
-  | { type: "sync_complete"; count: number }      // Sync completed
-  | { type: "error"; message: string };           // Error during sync
-
 // ============================================
-// CHATS
+// CHATS (from WeChat's encrypted DBs)
 // ============================================
 
 export interface Chat {
-  id: string;
-  name: string;
-  imageHash?: string;  // MD5 hash of avatar for identity matching
-  avatarDescription?: string;
+  id: string;              // WeChat username (internal ID)
+  username: string;        // WeChat username (same as id, explicit)
+  name: string;            // Display name (remark > nick_name > username)
+  remark?: string;         // User-set contact remark
   lastMessagePreview?: string;
   lastMessageSender?: string;
   lastActivityAt?: string;
   unreadCount: number;
   isGroup: boolean;
-  isPinned: boolean;
-  isMuted: boolean;
-  searchTerms?: string[];
-  scrollPositionHint?: number;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface ListChatsParams {
   limit?: number;
-  unreadOnly?: boolean;
 }
 
 export interface FindChatParams {
@@ -121,47 +108,14 @@ export interface GetChatParams {
   id: string;
 }
 
-export interface OpenChatParams {
-  id: string;
-}
-
 // ============================================
-// MESSAGES
+// MESSAGES (stubs for future WeChat DB reads)
 // ============================================
-
-export type MessageContentType =
-  | "text"
-  | "image"
-  | "video"
-  | "file"
-  | "audio"
-  | "sticker"
-  | "link"
-  | "miniprogram"
-  | "location";
-
-export interface Message {
-  id: string;
-  chatId: string;
-  contentType: MessageContentType;
-  contentText?: string;
-  senderName?: string;
-  isOutgoing: boolean;
-  timestampDisplay?: string;
-  timestampParsed?: string;
-  adjacentTextBefore?: string;
-  adjacentTextAfter?: string;
-  isDownloaded: boolean;
-  downloadPath?: string;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export interface SendParams {
   chatId: string;
   text?: string;
-  files?: string[]; // base64 encoded files
+  files?: string[];
 }
 
 export interface SendResult {
@@ -170,42 +124,16 @@ export interface SendResult {
   error?: string;
 }
 
-export interface GetMessagesParams {
-  chatId: string;
-  limit?: number;
-  since?: string;
-}
-
-export interface DownloadAttachmentParams {
-  messageId: string;
-}
-
-export interface DownloadAttachmentResult {
-  base64: string;
-  mimeType: string;
-  filename?: string;
-}
-
 // ============================================
 // EVENTS
 // ============================================
-
-export interface MessageEvent {
-  type: "message";
-  message: Message;
-}
 
 export interface LoginEvent {
   type: "login";
   state: LoginState;
 }
 
-export interface QrEvent {
-  type: "qr";
-  dataUrl: string;
-}
-
-export type ServerEvent = MessageEvent | LoginEvent | QrEvent;
+export type ServerEvent = LoginEvent;
 
 // ============================================
 // AGENT CONFIGURATION

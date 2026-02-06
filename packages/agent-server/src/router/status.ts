@@ -167,14 +167,6 @@ export const statusRouter = router({
 
         const run = async () => {
           try {
-            // Quick check: already logged in?
-            const probe = await runA11yProbe({ session });
-            if (probe.loggedIn) {
-              emit.next({ type: "login_success" });
-              emit.complete();
-              return;
-            }
-
             // Get drizzle db for FSM context
             const db = getDb();
 
@@ -196,17 +188,17 @@ export const statusRouter = router({
               }
             );
 
-            // Run FSM execution
+            // Run FSM execution - plan handles all phases including
+            // user detection and key extraction after login
             emit.next({ type: "status", message: "Navigating login flow..." });
             const result = await runExecution(execution);
 
             if (execution.status === "aborted") {
               emit.next({ type: "login_timeout" });
-            } else if (result.success) {
-              emit.next({ type: "login_success" });
-            } else {
+            } else if (!result.success) {
               emit.next({ type: "error", message: result.error || "Login failed" });
             }
+            // login_success is emitted by the plan itself (after key extraction)
             emit.complete();
           } catch (error) {
             if (!abortSignal.aborted) {

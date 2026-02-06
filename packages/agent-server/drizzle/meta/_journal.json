@@ -29,6 +29,13 @@
       "when": 1770243461171,
       "tag": "0003_shiny_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1770350400000,
+      "tag": "0004_replace_chats_with_wechat_keys",
+      "breakpoints": true
     }
   ]
 }

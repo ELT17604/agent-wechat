@@ -6,7 +6,7 @@ import type { Session } from "@thisnick/agent-wechat-shared";
 export type { Session };
 
 // ============================================
-// A11y Tree Types (from wechat-a11y-dump)
+// A11y Tree Types (from a11y-dump)
 // ============================================
 
 export interface Bounds {

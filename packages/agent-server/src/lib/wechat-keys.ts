@@ -23,9 +23,9 @@ interface ExtractKeysOutput {
 /**
  * Extract all WeChat DB keys from process memory.
  *
- * Calls the wechat-extract-keys script which uses Frida to scan
- * the WeChat process memory for SQLCipher cipher_ctx structures,
- * extracts candidate keys, and verifies them against each database.
+ * Calls the extract-keys script which scans /proc/pid/mem for
+ * SQLCipher cipher_ctx structures, extracts candidate keys, and
+ * verifies them against each database.
  *
  * Takes ~20 seconds. Blocks the calling thread.
  */
@@ -36,7 +36,7 @@ export function extractKeys(wechatPid: number): Record<string, string> {
   try {
     try {
       execSync(
-        `env HOME=/home/wechat python3 /opt/tools/wechat-extract-keys.py --pid ${wechatPid} --output ${outPath}`,
+        `env HOME=/home/wechat python3 /opt/tools/extract-keys.py --pid ${wechatPid} --output ${outPath}`,
         {
           timeout: 120_000,  // 2 min max
           encoding: "utf-8",

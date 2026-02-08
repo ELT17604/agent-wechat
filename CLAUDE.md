@@ -16,8 +16,8 @@ WeChat automation via UI control. WeChat runs in a Docker container with automat
 │  │  Port 6174   │    │  + AT-SPI    │    │                 │   │
 │  └──────────────┘    └──────────────┘    └─────────────────┘   │
 │         │                                                        │
-│         │  Tools: wechat-screenshot, wechat-a11y-dump,          │
-│         │         wechat-click, wechat-type, wechat-key         │
+│         │  Tools: screenshot, a11y-dump, click, type, key        │
+│         │                                                        │
 │         │                                                        │
 │  ┌──────┴───────┐    ┌──────────────┐                           │
 │  │   SQLite DB  │    │  FSM Engine  │  (Deterministic)          │
@@ -161,14 +161,14 @@ findAncestor(button, (n) => n.role === 'frame' && n.name === 'WeChat')
 ## Tool Scripts (in container at /opt/tools/)
 
 **UI Observation:**
-- `wechat-screenshot` - returns base64 PNG
-- `wechat-a11y-dump` - returns nested JSON a11y tree
+- `screenshot` - returns base64 PNG
+- `a11y-dump` - returns nested JSON a11y tree
 
 **UI Interaction:**
-- `wechat-click <x> <y>` - click coordinates
-- `wechat-type "<text>"` - type via clipboard (Unicode-safe)
-- `wechat-key <combo>` - press keys (Return, Escape, ctrl+a, etc.)
-- `wechat-scroll <up|down> [amount]`
+- `click <x> <y>` - click coordinates
+- `type "<text>"` - type via clipboard (Unicode-safe)
+- `key <combo>` - press keys (Return, Escape, ctrl+a, etc.)
+- `scroll <up|down> [amount]`
 
 ## CLI Commands
 

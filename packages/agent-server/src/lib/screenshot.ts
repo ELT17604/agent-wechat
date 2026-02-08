@@ -3,11 +3,11 @@ import fs from "fs/promises";
 
 /**
  * Capture a screenshot and return as base64-encoded PNG
- * Uses the wechat-screenshot command which saves to a temp file
+ * Uses the screenshot command which saves to a temp file
  */
 export async function captureScreenshot(options?: ExecOptions): Promise<string> {
-  // wechat-screenshot returns the path to the saved file
-  const result = await execCommand("wechat-screenshot", [], options);
+  // screenshot returns the path to the saved file
+  const result = await execCommand("screenshot", [], options);
 
   if (result.exitCode !== 0) {
     throw new Error(`Screenshot failed: ${result.stderr}`);
@@ -29,7 +29,7 @@ export async function captureScreenshot(options?: ExecOptions): Promise<string> 
  * Capture a screenshot and save to specified path
  */
 export async function captureScreenshotToFile(outputPath: string, options?: ExecOptions): Promise<string> {
-  const result = await execCommand("wechat-screenshot", ["--file", outputPath], options);
+  const result = await execCommand("screenshot", ["--file", outputPath], options);
 
   if (result.exitCode !== 0) {
     throw new Error(`Screenshot failed: ${result.stderr}`);
@@ -43,7 +43,7 @@ export async function captureScreenshotToFile(outputPath: string, options?: Exec
  * Caller is responsible for cleanup
  */
 export async function captureScreenshotToTemp(options?: ExecOptions): Promise<string> {
-  const result = await execCommand("wechat-screenshot", [], options);
+  const result = await execCommand("screenshot", [], options);
 
   if (result.exitCode !== 0) {
     throw new Error(`Screenshot failed: ${result.stderr}`);

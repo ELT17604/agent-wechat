@@ -31,7 +31,14 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     # SQLCipher build needs libssl-dev
     libssl-dev \
+    # Frida
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# ============================================
+# Frida (for runtime instrumentation)
+# ============================================
+RUN pip3 install frida-tools
 
 # ============================================
 # Node.js 22 + pnpm + build tools (for native modules)
@@ -67,7 +74,7 @@ RUN dpkg -i /tmp/wechat.deb || (apt-get update && apt-get install -y -f) \
 RUN useradd -m -s /bin/bash wechat
 
 # ============================================
-# Tool scripts (wechat-*, db-*, wechat-a11y-dump)
+# Tool scripts (screenshot, click, type, key, scroll, a11y-dump, etc.)
 # ============================================
 RUN mkdir -p /opt/tools
 COPY tools/ /opt/tools/

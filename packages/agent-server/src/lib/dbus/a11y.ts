@@ -348,7 +348,7 @@ function addParentRefs(node: A11yNode, parent?: A11yNode): void {
 
 /**
  * Get the desktop accessibility tree using dbus-next.
- * This replaces the Python wechat-a11y-dump script.
+ * This replaces the Python a11y-dump script.
  *
  * @param dbusAddress - The session bus address (optional, uses env if not provided)
  * @param maxDepth - Maximum tree depth to traverse (default 30)

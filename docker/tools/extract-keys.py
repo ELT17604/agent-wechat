@@ -9,7 +9,7 @@ Requirements:
   - Must run as same user that owns the WeChat process
 
 Usage:
-  python3 wechat-extract-keys.py [--output db_keys.json]
+  python3 extract-keys.py [--output db_keys.json]
 """
 
 import subprocess

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Activate (bring to foreground) a window by PID and bounds matching
-# Usage: wechat-window-activate <pid> <x> <y> <width> <height>
+# Usage: window-activate <pid> <x> <y> <width> <height>
 #
 # Finds all windows for the given PID, matches by geometry, and activates.
 # Returns the window ID on success.
@@ -8,7 +8,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 5 ]; then
-  echo "Usage: wechat-window-activate <pid> <x> <y> <width> <height>" >&2
+  echo "Usage: window-activate <pid> <x> <y> <width> <height>" >&2
   exit 1
 fi
 

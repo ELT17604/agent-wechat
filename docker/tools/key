@@ -1,21 +1,21 @@
 #!/bin/bash
 # Press key combination, optionally activating a specific window first
-# Usage: wechat-key <combo>
-#        wechat-key --window <pid> <wx> <wy> <ww> <wh> -- <combo>
+# Usage: key <combo>
+#        key --window <pid> <wx> <wy> <ww> <wh> -- <combo>
 #
 # Examples:
-#   wechat-key Return
-#   wechat-key ctrl+a
-#   wechat-key alt+F4
-#   wechat-key shift+Tab
-#   wechat-key --window 1234 100 100 800 600 -- ctrl+Tab
+#   key Return
+#   key ctrl+a
+#   key alt+F4
+#   key shift+Tab
+#   key --window 1234 100 100 800 600 -- ctrl+Tab
 
 set -euo pipefail
 
 # Parse optional --window flag
 if [ "${1:-}" = "--window" ]; then
   if [ "$#" -lt 7 ]; then
-    echo "Usage: wechat-key --window <pid> <wx> <wy> <ww> <wh> -- <combo>" >&2
+    echo "Usage: key --window <pid> <wx> <wy> <ww> <wh> -- <combo>" >&2
     exit 1
   fi
   WIN_PID="$2"
@@ -31,14 +31,14 @@ if [ "${1:-}" = "--window" ]; then
 
   # Activate the window first
   SCRIPT_DIR="$(dirname "$0")"
-  "$SCRIPT_DIR/wechat-window-activate" "$WIN_PID" "$WIN_X" "$WIN_Y" "$WIN_W" "$WIN_H" >/dev/null || {
+  "$SCRIPT_DIR/window-activate" "$WIN_PID" "$WIN_X" "$WIN_Y" "$WIN_W" "$WIN_H" >/dev/null || {
     echo "Warning: could not activate window" >&2
   }
 fi
 
 if [ -z "${1:-}" ]; then
-  echo "Usage: wechat-key <combo>" >&2
-  echo "       wechat-key --window <pid> <wx> <wy> <ww> <wh> -- <combo>" >&2
+  echo "Usage: key <combo>" >&2
+  echo "       key --window <pid> <wx> <wy> <ww> <wh> -- <combo>" >&2
   echo "Examples: Return, ctrl+a, alt+F4, shift+Tab" >&2
   exit 1
 fi

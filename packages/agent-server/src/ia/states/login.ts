@@ -50,19 +50,19 @@ export const loginQrState: IAState<FrameIdentifyMetadata> = {
 
 /**
  * Login account state - WeChat shows a saved account to confirm.
- * Identified by: "Log In" button + "Switch Account" button + "Transfer files only" button
+ * Identified by: ("Log In" or "Open WeChat") button + "Switch Account" button
  */
 export const loginAccountState: IAState<FrameIdentifyMetadata> = {
   fsm: "mainWindow",
   id: "login_account",
 
   identify: ({ a11y }) => {
-    const logInBtn = querySelector(a11y, 'push-button[name="Log In"]');
+    const logInBtn = querySelector(a11y, 'push-button[name="Log In"]')
+      ?? querySelector(a11y, 'push-button[name="Open WeChat"]');
     if (!logInBtn) return { identified: false };
 
     const hasSwitchAccount = querySelector(a11y, 'push-button[name="Switch Account"]') !== null;
-    const hasTransferFiles = querySelector(a11y, 'push-button[name="Transfer files only"]') !== null;
-    if (!hasSwitchAccount || !hasTransferFiles) return { identified: false };
+    if (!hasSwitchAccount) return { identified: false };
 
     const frame = findAncestor(logInBtn, "frame");
     return { identified: true, metadata: frame ? { frame } : undefined };

@@ -65,7 +65,7 @@ export async function executeAction<TParams, TPlanState = unknown>(
         );
       }
       args.push(String(x), String(y));
-      await execCommand("wechat-click", args, { session });
+      await execCommand("click", args, { session });
       break;
     }
 
@@ -76,7 +76,7 @@ export async function executeAction<TParams, TPlanState = unknown>(
         await sleep(100);
       }
       // Type text using clipboard (Unicode-safe)
-      await execCommand("wechat-type", [action.text], { session });
+      await execCommand("type", [action.text], { session });
       break;
     }
 
@@ -96,7 +96,7 @@ export async function executeAction<TParams, TPlanState = unknown>(
         );
       }
       keyArgs.push(action.combo);
-      await execCommand("wechat-key", keyArgs, { session });
+      await execCommand("key", keyArgs, { session });
       break;
     }
 
@@ -106,7 +106,7 @@ export async function executeAction<TParams, TPlanState = unknown>(
       if (action.x !== undefined && action.y !== undefined) {
         args.push(String(action.x), String(action.y));
       }
-      await execCommand("wechat-scroll", args, { session });
+      await execCommand("scroll", args, { session });
       break;
     }
 

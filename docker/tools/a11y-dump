@@ -3,9 +3,9 @@
 Dump AT-SPI accessibility tree for WeChat automation.
 
 Usage:
-  wechat-a11y-dump                    # JSON nested tree (default)
-  wechat-a11y-dump --format json      # JSON nested tree
-  wechat-a11y-dump --format aria      # ARIA-style human-readable
+  a11y-dump                    # JSON nested tree (default)
+  a11y-dump --format json      # JSON nested tree
+  a11y-dump --format aria      # ARIA-style human-readable
 
 Output formats:
   json: Nested tree with children arrays, compatible with CSS selectors

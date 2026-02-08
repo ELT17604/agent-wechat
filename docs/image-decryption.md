@@ -39,7 +39,7 @@ Keys exist only in WeChat's process memory at runtime (not on disk). They are **
 
 ### How We Extract
 
-During login key extraction (`wechat-extract-keys.py`), we read `/proc/pid/mem` directly (no Frida needed):
+During login key extraction (`extract-keys.py`), we read `/proc/pid/mem` directly (no Frida needed):
 
 1. **AES key**: Regex-based memory scan of all RW regions. The key is stored XOR-obfuscated with a per-build 32-byte mask (`IMAGE_XOR_MASK`). Since the plaintext must be 32 hex characters (0-9, a-f), each byte position has only 16 valid obfuscated values out of 256. We build a regex matching the first 4 obfuscated bytes (C-level speed), then verify the remaining 28 in Python. False positive probability is (16/256)^32 ≈ 3e-39 — any match is the real key.
 2. **XOR byte**: Derived lazily at image access time (not during key extraction). On first image decryption, the AES-decrypted head reveals the image format, and the XOR byte is recovered by XOR-ing the file's tail bytes against known trailers (JPEG `FF D9`, PNG IEND `AE 42 60 82`, GIF `00 3B`). The result is persisted for subsequent queries.
@@ -47,7 +47,7 @@ During login key extraction (`wechat-extract-keys.py`), we read `/proc/pid/mem` 
 ### Storage
 
 Image keys are stored in the `wechat_keys` table alongside DB encryption keys, using reserved `dbName` values:
-- `_image_aes` — 32-char hex string (written by `wechat-extract-keys.py`)
+- `_image_aes` — 32-char hex string (written by `extract-keys.py`)
 - `_image_xor` — 2-char hex byte (e.g. `"85"`) — derived lazily on first image access, not during extraction
 
 ## File Locations
@@ -93,7 +93,7 @@ XOR byte is derived lazily from the first decrypted JPEG (via FFD9 trailer) and 
 
 ## Binary Version Dependency
 
-The `IMAGE_XOR_MASK` is a compile-time constant that differs per binary build. Known masks are stored in `BUILD_PROFILES` in `wechat-extract-keys.py`, keyed by the first 8 hex chars of the ELF BuildID:
+The `IMAGE_XOR_MASK` is a compile-time constant that differs per binary build. Known masks are stored in `BUILD_PROFILES` in `extract-keys.py`, keyed by the first 8 hex chars of the ELF BuildID:
 
 | BuildID prefix | Architecture | IMAGE_XOR_MASK |
 |---------------|-------------|----------------|
@@ -191,7 +191,7 @@ objdump -s -j .rodata /opt/wechat/wechat | grep "<first 4 bytes hex>"
 
 #### Adding to BUILD_PROFILES
 
-Get the BuildID with `readelf -n /opt/wechat/wechat`, take the first 8 hex chars as the key, and add the verified mask to `BUILD_PROFILES` in `wechat-extract-keys.py`.
+Get the BuildID with `readelf -n /opt/wechat/wechat`, take the first 8 hex chars as the key, and add the verified mask to `BUILD_PROFILES` in `extract-keys.py`.
 
 ## Verified Against
 

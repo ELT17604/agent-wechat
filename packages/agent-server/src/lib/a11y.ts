@@ -66,7 +66,7 @@ export interface A11yTreeItem {
 
 type A11yScope = "chats" | "messages" | "buttons" | "full" | "desktop";
 
-const A11Y_SCRIPT_PATH = "/opt/tools/wechat-a11y-dump";
+const A11Y_SCRIPT_PATH = "/opt/tools/a11y-dump";
 
 /**
  * Run a11y probe to check login state

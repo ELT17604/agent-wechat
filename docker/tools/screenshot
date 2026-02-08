@@ -1,6 +1,6 @@
 #!/bin/bash
 # Take a screenshot of the WeChat window and save to a temp file
-# Usage: wechat-screenshot [--file <path>]
+# Usage: screenshot [--file <path>]
 #   --file: Save to specific path instead of temp file
 # Returns: Path to the screenshot file (use readFile tool to view it)
 
@@ -22,7 +22,7 @@ done
 
 # Generate temp file path if not specified
 if [ -z "$OUTPUT_FILE" ]; then
-  OUTPUT_FILE="/tmp/wechat-screenshot-$(date +%s%N).png"
+  OUTPUT_FILE="/tmp/screenshot-$(date +%s%N).png"
 fi
 
 # Capture the screen

@@ -1,13 +1,13 @@
 #!/bin/bash
 # Scroll up or down
-# Usage: wechat-scroll <direction> [amount]
+# Usage: scroll <direction> [amount]
 #   direction: up or down
 #   amount: number of scroll clicks (default: 3)
 
 set -euo pipefail
 
 if [ -z "${1:-}" ]; then
-  echo "Usage: wechat-scroll <up|down> [amount]" >&2
+  echo "Usage: scroll <up|down> [amount]" >&2
   exit 1
 fi
 

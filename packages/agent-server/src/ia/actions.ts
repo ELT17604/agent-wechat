@@ -33,7 +33,7 @@ export const WindowActions = {
 // ============================================
 
 export const LoginActions = {
-  CLICK_LOGIN: { type: "click", selector: 'push-button[name="Log In"]' } as Action,
+  CLICK_LOGIN: { type: "click", selector: 'push-button[name=/^(Log In|Open WeChat)$/]' } as Action,
   CLICK_SWITCH_ACCOUNT: { type: "click", selector: 'push-button[name="Switch Account"]' } as Action,
   WAIT: CommonActions.WAIT,
 } as const;

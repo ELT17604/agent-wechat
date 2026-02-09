@@ -1,8 +1,7 @@
 /**
- * Chat list from WeChat's encrypted databases.
+ * Chat list from WeChat databases.
  *
- * Queries session.db and contact.db to build the chat list,
- * replacing the old RPA-based sync approach.
+ * Queries session.db and contact.db to build the chat list.
  */
 
 import type { Chat } from "@thisnick/agent-wechat-shared";

@@ -1,5 +1,5 @@
 /**
- * Message reads from WeChat's encrypted message_0.db.
+ * Message reads from WeChat's message databases.
  *
  * Each chat's messages are stored in a `Msg_{MD5(username)}` table.
  * Non-text content is zstd-compressed (WCDB_CT_message_content = 4).

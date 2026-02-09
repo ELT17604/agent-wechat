@@ -189,7 +189,7 @@ export const statusRouter = router({
             );
 
             // Run FSM execution - plan handles all phases including
-            // user detection and key extraction after login
+            // user detection and setup after login
             emit.next({ type: "status", message: "Navigating login flow..." });
             const result = await runExecution(execution);
 
@@ -198,7 +198,7 @@ export const statusRouter = router({
             } else if (!result.success) {
               emit.next({ type: "error", message: result.error || "Login failed" });
             }
-            // login_success is emitted by the plan itself (after key extraction)
+            // login_success is emitted by the plan itself (after setup completes)
             emit.complete();
           } catch (error) {
             if (!abortSignal.aborted) {

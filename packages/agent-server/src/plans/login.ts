@@ -23,7 +23,7 @@ const loginParamsSchema = z.object({
  * - authenticating: in login_* views (derived, no tracking needed)
  * - maximized: we sent maximize command, now detect user
  * - detecting_user: scan /proc/pid/fd for account directory
- * - extracting_keys: run Frida key extraction (~20s)
+ * - extracting_keys: run post-login setup (~20s)
  * - done: complete
  */
 type LoginPhase = "authenticating" | "maximized" | "detecting_user" | "extracting_keys" | "done";
@@ -40,15 +40,14 @@ interface LoginPlanState {
  * Login Plan
  *
  * Navigates the WeChat login flow from any state to logged-in state.
- * After login, detects the user account via /proc/pid/fd and extracts
- * SQLCipher encryption keys from WeChat process memory.
+ * After login, detects the user account and sets up DB access.
  *
  * States handled:
  * - login_qr: Wait for QR code scan, emit QR to client
  * - login_account: Click "Log In" or "Switch Account"
  * - login_phone_confirm: Wait for phone confirmation, emit to client
  * - login_loading: Wait for app to load
- * - chat/chat_open: Maximize, detect user, extract keys
+ * - chat/chat_open: Maximize, detect user, setup DB access
  * - popup: Dismiss any popup dialogs
  */
 export const loginPlan: Plan<LoginParams, LoginPlanState> = {
@@ -202,7 +201,7 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
               }
               updateSessionLoggedInUser(db, sessionId, accountDir);
 
-              // Check if stored keys are valid (verifies with sqlcipher)
+              // Check if stored keys are valid
               const keyCheckStart = Date.now();
               if (!needsKeyExtraction(db, sessionId, accountDir)) {
                 // All keys valid - skip extraction
@@ -262,7 +261,7 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
           return { action: { type: "wait", ms: 2000 }, metadata: mainMeta };
         }
 
-        // Phase: extracting_keys -> run key extraction (~20s)
+        // Phase: extracting_keys -> run setup (~20s)
         if (planState.phase === "extracting_keys") {
           const sessionRow2 = db.select({ wechatPid: sessions.wechatPid })
             .from(sessions).where(eq(sessions.id, sessionId)).get();

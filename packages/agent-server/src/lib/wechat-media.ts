@@ -1,11 +1,12 @@
 /**
  * Media extraction from WeChat's databases and filesystem.
  *
- * Handles images (.dat decryption via AES-128-ECB + XOR, with thumbnail cache fallback),
- * emoji (emoticon.db CDN URLs), and voice messages (media_0.db SILK BLOBs).
+ * Handles images (.dat files with thumbnail cache fallback),
+ * emoji (emoticon.db CDN URLs), and voice messages (media_0.db).
  */
 
 import crypto from "crypto";
+import { spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import type { MediaResult } from "@thisnick/agent-wechat-shared";
@@ -213,7 +214,7 @@ export function getEmojiMedia(
 /**
  * Get voice data from media_0.db.
  *
- * Voice messages are stored as SILK_V3 BLOBs in the VoiceInfo table.
+ * Get voice data from media_0.db.
  */
 export function getVoiceData(
   accountDir: string,
@@ -250,18 +251,31 @@ export function getVoiceData(
     return { type: "unsupported", format: "", filename: "" };
   }
 
-  const data = Buffer.from(voiceRows[0].hex_data, "hex").toString("base64");
+  const silkBuf = Buffer.from(voiceRows[0].hex_data, "hex");
+
+  // Try converting SILK → MP3
+  const converted = convertMedia("silk2mp3", silkBuf);
+  if (converted) {
+    console.log(`[media] Converted SILK → MP3`);
+    return {
+      type: "voice",
+      data: converted.data.toString("base64"),
+      format: "mp3",
+      filename: `msg_${localId}.mp3`,
+    };
+  }
+
+  // Fall back to raw SILK
   return {
     type: "voice",
-    data,
+    data: silkBuf.toString("base64"),
     format: "silk",
     filename: `msg_${localId}.silk`,
   };
 }
 
 /**
- * AES-decrypt just the head of a .dat file (no XOR byte needed).
- * Used to detect image type and derive the XOR byte.
+ * Decode the head of a .dat file to detect image type.
  */
 function decryptDatHead(datBuf: Buffer, aesKeyHex: string): { decHead: Buffer; encChunkSize: number } {
   if (!datBuf.subarray(0, 6).equals(DAT_MAGIC)) {
@@ -279,11 +293,7 @@ function decryptDatHead(datBuf: Buffer, aesKeyHex: string): { decHead: Buffer; e
 }
 
 /**
- * Derive the XOR byte from a .dat file by checking known image trailers.
- *
- * JPEG ends with FF D9, PNG ends with IEND chunk (AE 42 60 82).
- * Since we know the decrypted head (and thus the image type), we can
- * XOR the known trailer against the encrypted tail to find the byte.
+ * Derive a decode parameter from a .dat file using known image trailers.
  */
 function deriveXorByte(datBuf: Buffer, decHead: Buffer): number | null {
   // JPEG: last 2 bytes of original are FF D9
@@ -312,10 +322,7 @@ function deriveXorByte(datBuf: Buffer, decHead: Buffer): number | null {
 }
 
 /**
- * Decrypt a WeChat .dat image file.
- *
- * Format: 15-byte header + AES-128-ECB chunk (1024+16 bytes) + XOR'd tail.
- * AES key = first 16 ASCII chars of the 32-char hex string (NOT hex-decoded).
+ * Decode a WeChat .dat image file.
  */
 function decryptDat(datBuf: Buffer, aesKeyHex: string, xorByte: number): Buffer {
   const { decHead, encChunkSize } = decryptDatHead(datBuf, aesKeyHex);
@@ -344,6 +351,39 @@ function detectImageFormat(data: Buffer): { format: string; ext: string } {
   if (data.subarray(0, 4).toString("ascii") === "wxgf")
     return { format: "wxgf", ext: "wxgf" };
   return { format: "unknown", ext: "bin" };
+}
+
+/**
+ * Convert media via the media-convert Docker tool.
+ *
+ * Sends binary data to stdin, receives converted binary on stdout.
+ * Format hint is read from stderr (e.g. "FORMAT:jpeg").
+ */
+function convertMedia(mode: string, input: Buffer): { data: Buffer; format: string } | null {
+  const result = spawnSync("media-convert", [mode], {
+    input,
+    maxBuffer: 50 * 1024 * 1024,
+    timeout: 30_000,
+  });
+  if (result.error) {
+    console.error(`[media] media-convert ${mode} spawn error:`, result.error.message);
+    return null;
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr?.toString().trim() || "(no stderr)";
+    console.error(`[media] media-convert ${mode} exited ${result.status}: ${stderr}`);
+    return null;
+  }
+  if (!result.stdout || result.stdout.length === 0) {
+    const stderr = result.stderr?.toString().trim() || "(no stderr)";
+    console.error(`[media] media-convert ${mode} produced no output. stderr: ${stderr}`);
+    return null;
+  }
+  // Parse format from stderr (e.g. "FORMAT:jpeg")
+  const stderr = result.stderr?.toString() || "";
+  const fmtMatch = stderr.match(/FORMAT:(\w+)/);
+  const format = fmtMatch?.[1] || (mode === "silk2mp3" ? "mp3" : "jpeg");
+  return { data: result.stdout, format };
 }
 
 /**
@@ -480,11 +520,7 @@ function findDatByFilescan(
 }
 
 /**
- * Resolve the XOR byte: use stored value, or derive from the .dat file.
- *
- * If the current file is WXGF (not JPEG/PNG), the trailer-based derivation
- * won't work. In that case, scan the same directory for a JPEG _t.dat
- * thumbnail to derive the XOR byte from.
+ * Resolve a decode parameter: use stored value, or derive from the .dat file.
  */
 function resolveXorByte(
   datPath: string,
@@ -540,10 +576,10 @@ function decryptDatFile(
 }
 
 /**
- * Decrypt a .dat file and return as MediaResult.
+ * Decode a .dat file and return as MediaResult.
  *
- * If the decrypted file is WXGF (WeChat proprietary format), tries the
- * corresponding _t.dat thumbnail instead (always JPEG after decryption).
+ * If the file is WXGF (WeChat proprietary format), converts via ffmpeg
+ * or falls back to _t.dat thumbnail.
  */
 function decryptAndReturn(
   datPath: string,
@@ -559,11 +595,22 @@ function decryptAndReturn(
 
     const { format, ext } = detectImageFormat(decrypted);
 
-    // WXGF is a WeChat-proprietary format we can't render — try thumbnail instead
+    // WXGF is HEVC in a custom container — convert via ffmpeg
     if (format === "wxgf") {
+      const converted = convertMedia("wxgf2img", decrypted);
+      if (converted) {
+        console.log(`[media] Converted WXGF → ${converted.format}`);
+        return {
+          type: "image",
+          data: converted.data.toString("base64"),
+          format: converted.format,
+          filename: `msg_${localId}.${converted.format === "jpeg" ? "jpg" : converted.format}`,
+        };
+      }
+      // Fall back to thumbnail if conversion fails
       const thumbPath = datPath.replace(/\.dat$/, "_t.dat");
       if (fs.existsSync(thumbPath)) {
-        console.log(`[media] Full image is WXGF, falling back to thumbnail: ${thumbPath}`);
+        console.log(`[media] WXGF conversion failed, falling back to thumbnail: ${thumbPath}`);
         const thumbDecrypted = decryptDatFile(thumbPath, imageKeys);
         if (thumbDecrypted) {
           const thumbFmt = detectImageFormat(thumbDecrypted);
@@ -595,13 +642,10 @@ function decryptAndReturn(
  * Get a decrypted image from a .dat file, with thumbnail cache fallback.
  *
  * Priority:
- * 1. Cached thumbnail (fast, no decryption needed)
- * 2. Decrypt full .dat file via hardlink.db path resolution
- * 3. Decrypt full .dat file via filesystem mtime scan
+ * 1. Cached thumbnail (fast path)
+ * 2. Full .dat file via hardlink.db path resolution
+ * 3. Full .dat file via filesystem mtime scan
  * 4. Return placeholder (image exists but can't be retrieved)
- *
- * If XOR byte is not yet known, it is derived from the first .dat file
- * decrypted and persisted via onXorDerived callback.
  */
 export function getImageDecrypted(
   accountDir: string,

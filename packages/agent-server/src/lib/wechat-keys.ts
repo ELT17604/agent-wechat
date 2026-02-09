@@ -1,8 +1,7 @@
 /**
- * WeChat SQLCipher key extraction and storage.
+ * WeChat DB credential management.
  *
- * Keys are extracted from WeChat process memory using Frida,
- * then stored in the agent DB for subsequent queries.
+ * Handles extraction, storage, and verification of DB access credentials.
  */
 
 import { execSync } from "child_process";
@@ -21,11 +20,7 @@ interface ExtractKeysOutput {
 }
 
 /**
- * Extract all WeChat DB keys from process memory.
- *
- * Calls the extract-keys script which scans /proc/pid/mem for
- * SQLCipher cipher_ctx structures, extracts candidate keys, and
- * verifies them against each database.
+ * Extract all WeChat DB access credentials.
  *
  * Takes ~20 seconds. Blocks the calling thread.
  */
@@ -55,7 +50,7 @@ export function extractKeys(wechatPid: number): Record<string, string> {
       );
       const dbKeys = Object.keys(output.keys).filter(k => !k.startsWith("_"));
       const hasImageAes = !!output.keys["_image_aes"];
-      console.log(`[wechat-keys] Extracted ${dbKeys.length} DB keys, image AES key: ${hasImageAes ? "yes" : "no"}`);
+      console.log(`[wechat-keys] Extracted ${dbKeys.length} DB keys, image key: ${hasImageAes ? "yes" : "no"}`);
       if (hasImageAes) {
         console.log(`[wechat-keys]   _image_aes: ${output.keys["_image_aes"]!.slice(0, 16)}...`);
       }
@@ -131,7 +126,7 @@ export function storeKeys(
 
 /**
  * Verify a single key against a database file.
- * Returns true if the key successfully decrypts the database.
+ * Returns true if the key successfully opens the database.
  */
 export function verifyKey(dbPath: string, hexKey: string): boolean {
   try {
@@ -180,12 +175,12 @@ export function verifyStoredKeys(
 }
 
 /**
- * Check if key extraction is needed.
+ * Check if credential setup is needed.
  *
  * Returns true if:
  * - No stored keys exist
  * - There are DB files on disk without a matching key
- * - Any stored key fails sqlcipher verification
+ * - Any stored key fails verification
  */
 export function needsKeyExtraction(
   db: DatabaseInstance,
@@ -236,13 +231,9 @@ export function needsKeyExtraction(
 }
 
 /**
- * Get stored image decryption keys for a session + account.
+ * Get stored image access keys for a session + account.
  *
- * Image keys are stored in wechat_keys with reserved dbName values:
- * - `_image_aes`: 32-char hex string (AES key = first 16 ASCII chars)
- * - `_image_xor`: 2-char hex byte (e.g. "85") — may be absent if lazy-init not triggered
- *
- * Returns { aesKeyHex, xorByte? } or null if AES key not available.
+ * Returns { aesKeyHex, xorByte? } or null if not available.
  */
 export function getImageKeys(
   db: DatabaseInstance,

@@ -123,20 +123,20 @@ interface IAState<TMetadata = unknown> {
 
 **Effects** (`src/effects/watchers.ts`):
 
-Currently empty — all login emissions (QR, phone_confirm, login_success, status) are handled directly by the login plan via `planState` to ensure proper sequencing with key extraction.
+Currently empty — all login emissions (QR, phone_confirm, login_success, status) are handled directly by the login plan via `planState` to ensure proper sequencing.
 
 **Plans** (`src/plans/login.ts`):
 
-Login plan phases: `authenticating → maximized → detecting_user → extracting_keys → done`
+Login plan phases: `authenticating → maximized → detecting_user → setup → done`
 
 ```
 authenticating   Wait for QR scan, phone confirm, loading
      ↓           (transitions when view reaches "chat")
 maximized        Send maximize command
      ↓
-detecting_user   Find WeChat PID via pgrep, resolve account dir from /proc/pid/fd
-     ↓           If stored keys are valid (verified with sqlcipher) → skip to done
-extracting_keys  Run Frida key extraction (~20s), store keys in wechat_keys table
+detecting_user   Find WeChat PID, resolve account directory
+     ↓           If stored credentials are valid → skip to done
+setup            Post-login setup (~20s), store credentials
      ↓
 done             Emit login_success, goal check passes
 ```
@@ -176,8 +176,9 @@ findAncestor(button, (n) => n.role === 'frame' && n.name === 'WeChat')
 pnpm cli up              # Start container
 pnpm cli down            # Stop container
 pnpm cli status          # Check server + login state
-pnpm cli auth login      # Login flow (QR + DB key extraction)
-pnpm cli chats list      # List chats from WeChat's encrypted DBs
+pnpm cli auth login      # Login flow
+pnpm cli chats list      # List chats
+pnpm cli chats open <id> # Open a chat in the UI
 pnpm cli find <name>     # Find chat by name
 pnpm cli send <id> <msg> # Send message to chat
 ```
@@ -210,7 +211,7 @@ pnpm build:image:amd64        # Build Docker image (Intel)
 | Table | Purpose |
 |-------|---------|
 | `sessions` | Multi-user sessions (display, VNC port, login state, `loggedInUser`) |
-| `wechat_keys` | SQLCipher encryption keys per (session, account, db_name) |
+| `wechat_keys` | Credentials per (session, account, db_name) |
 | `sync_state` | Key-value store for sync progress |
 | `context` | FSM AppState persistence (JSON blob) |
 
@@ -245,8 +246,7 @@ On startup, `initDb()` in `src/db/index.ts` does:
 
 | Decision | Choice | Why |
 |----------|--------|-----|
-| Chat data | Direct WeChat DB reads via SQLCipher | Fast, reliable — no RPA scraping needed |
-| Key extraction | Frida + sqlcipher CLI via execSync | better-sqlite3 doesn't link against sqlcipher natively |
+| Chat data | Direct WeChat DB reads | Fast, reliable — no RPA scraping needed |
 | Login flow | Deterministic FSM | Fast, cheap, reliable - no LLM needed |
 | State management | Redux-like (reduce → effects) | Pure reducers, reactive effects on state diff |
 | Commands | Per-state (not global) | Each state defines available commands |
@@ -296,22 +296,15 @@ export const myState: IAState<FrameIdentifyMetadata> = {
 3. Call via `createExecution(myPlan, params, context, options)`
 4. Remember: action executes BEFORE goal check (can have final action)
 
-## WeChat DB Access
+## WeChat Data Access
 
-Chat data is read directly from WeChat's encrypted SQLCipher databases, bypassing UI scraping entirely.
-
-### How It Works
-
-1. **Login plan** detects the WeChat process PID via `pgrep`, resolves the account directory from `/proc/<pid>/fd` symlinks
-2. **Frida-based key extraction** reads AES-256 encryption keys from WeChat process memory (~20s)
-3. Keys are stored in `wechat_keys` table, scoped to `(session_id, account_dir, db_name)`
-4. **Smart key management**: on subsequent logins, existing keys are verified with sqlcipher before re-extracting
+Chat data is read directly from WeChat's local databases.
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/lib/wechat-db.ts` | `queryWechatDb()` via sqlcipher CLI, `findAccountDir()`, `findWechatPid()` |
+| `src/lib/wechat-db.ts` | `queryWechatDb()`, `findAccountDir()`, `findWechatPid()` |
 | `src/lib/wechat-keys.ts` | `extractKeys()`, `storeKeys()`, `needsKeyExtraction()`, `verifyKey()` |
 | `src/lib/wechat-chats.ts` | `listChatsFromWechatDb()`, `getChatByUsername()`, `findChatsByName()` |
 
@@ -322,18 +315,16 @@ Chat data is read directly from WeChat's encrypted SQLCipher databases, bypassin
 
 ### Gotchas
 
-- `sqlcipher` CLI outputs `ok\n` before JSON (from PRAGMA commands) — must find `[` start index before `JSON.parse`
-- `PRAGMA cipher_compatibility = 4` required for sqlcipher 4.6.1
 - `pgrep -f /usr/bin/wechat` returns multiple PIDs (wrapper + real process) — pick the one with most open fds
 - Stored `wechatPid` goes stale after container rebuild — always fall back to `findWechatPid()`
-- Python extract-keys script exits non-zero if any DB key not found — catch error, read JSON output file anyway (partial success)
+- Extract-keys script exits non-zero if any key not found — catch error, read JSON output file anyway (partial success)
 
 ## Current Status
 
 - [x] Deterministic FSM for login flow
-- [x] Login plan with post-login key extraction (detect user → extract keys → done)
-- [x] Direct WeChat DB reads via SQLCipher (session.db, contact.db)
-- [x] Smart key management (verify existing keys, only re-extract when needed)
+- [x] Login plan with post-login setup (detect user → setup → done)
+- [x] Direct WeChat DB reads (session.db, contact.db)
+- [x] Smart credential management (verify existing, only re-extract when needed)
 - [x] Context persistence to SQLite
 - [x] Parent refs in a11y tree + findAncestor helper
 - [x] Frame-scoped click/type actions

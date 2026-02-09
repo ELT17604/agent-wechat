@@ -12,7 +12,7 @@ import { openChat } from "../lib/chat-select.js";
 
 export const chatsRouter = router({
   /**
-   * List chats from WeChat's encrypted session.db + contact.db
+   * List chats from WeChat databases
    */
   list: publicProcedure
     .input(listChatsParamsSchema)

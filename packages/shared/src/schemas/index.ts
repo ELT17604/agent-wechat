@@ -118,7 +118,7 @@ export const loginSubscriptionEventSchema = z.discriminatedUnion("type", [
 ]);
 
 // ============================================
-// CHATS (from WeChat's encrypted DBs)
+// CHATS
 // ============================================
 
 export const chatSchema = z.object({
@@ -158,7 +158,7 @@ export const openChatResultSchema = z.object({
 });
 
 // ============================================
-// MESSAGES (from WeChat's encrypted DBs)
+// MESSAGES
 // ============================================
 
 export const messageSchema = z.object({

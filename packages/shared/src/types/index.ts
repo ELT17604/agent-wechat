@@ -81,7 +81,7 @@ export type LoginSubscriptionEvent =
   | { type: "error"; message: string };           // No QR found, etc.
 
 // ============================================
-// CHATS (from WeChat's encrypted DBs)
+// CHATS
 // ============================================
 
 export interface Chat {
@@ -120,7 +120,7 @@ export interface OpenChatResult {
 }
 
 // ============================================
-// MESSAGES (from WeChat's encrypted DBs)
+// MESSAGES
 // ============================================
 
 export interface Message {

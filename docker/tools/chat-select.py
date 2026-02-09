@@ -13,12 +13,6 @@ Output (JSON):
     {"ok": true, "username": "filehelper", "index": 3}
     {"ok": false, "error": "Chat not found in session list"}
     {"ok": true, "sessions": {"filehelper": 0, "wxid_xxx": 1, ...}}
-
-How it works:
-    1. Scans heap for session vector via Frida, enumerates all sessions
-    2. Uses a11y tree to find a clickable chat list item
-    3. Hooks selectSession() + clicks the item -> hook replaces index arg
-    4. WeChat's own code runs the selection on the main thread
 """
 import subprocess
 import time

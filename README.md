@@ -30,10 +30,10 @@ pnpm cli up
 # Check status
 pnpm cli status
 
-# Login (shows QR code in terminal, extracts DB keys)
+# Login (shows QR code in terminal)
 pnpm cli auth login
 
-# List chats (reads from WeChat's encrypted databases)
+# List chats
 pnpm cli chats list
 
 # Stop container
@@ -48,8 +48,8 @@ pnpm cli down
 | `pnpm cli down` | Stop and remove container |
 | `pnpm cli logs` | Stream container logs |
 | `pnpm cli status` | Show server and login status |
-| `pnpm cli auth login` | Login flow (QR + DB key extraction) |
-| `pnpm cli chats list` | List chats from WeChat's encrypted DBs |
+| `pnpm cli auth login` | Login flow (shows QR code) |
+| `pnpm cli chats list` | List chats |
 | `pnpm cli find <name>` | Find chat by name |
 | `pnpm cli send <id> <msg>` | Send message to chat |
 

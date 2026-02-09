@@ -116,7 +116,7 @@ export function initDb(): DatabaseInstance {
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
     CREATE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name);
 
-    -- WeChat encryption keys (per-session, per-account)
+    -- WeChat DB credentials (per-session, per-account)
     CREATE TABLE IF NOT EXISTS wechat_keys (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL REFERENCES sessions(id),

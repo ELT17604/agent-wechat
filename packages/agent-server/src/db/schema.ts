@@ -25,14 +25,14 @@ export const sessions = sqliteTable("sessions", {
 ]);
 
 // ============================================
-// WECHAT KEYS (per-session, per-account encryption keys)
+// WECHAT KEYS (per-session, per-account DB credentials)
 // ============================================
 export const wechatKeys = sqliteTable("wechat_keys", {
   id: text("id").primaryKey(),
   sessionId: text("session_id").notNull().references(() => sessions.id),
   accountDir: text("account_dir").notNull(),  // e.g. "wxid_xxx_abc123"
   dbName: text("db_name").notNull(),          // e.g. "session.db", "contact.db"
-  hexKey: text("hex_key").notNull(),          // 64-char hex AES-256 key
+  hexKey: text("hex_key").notNull(),          // hex-encoded key
   verifiedAt: text("verified_at"),
 }, (table) => [
   unique("uq_wechat_keys").on(table.sessionId, table.accountDir, table.dbName),

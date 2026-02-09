@@ -11,7 +11,7 @@ import { getMessageMedia } from "../lib/wechat-media.js";
 
 export const messagesRouter = router({
   /**
-   * List messages for a specific chat from WeChat's encrypted message_0.db
+   * List messages for a specific chat
    */
   list: publicProcedure
     .input(listMessagesParamsSchema)

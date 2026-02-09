@@ -26,19 +26,20 @@ RUN apt-get update && apt-get install -y \
     # Audio - needed for message notifications
     pulseaudio alsa-base alsa-utils \
     gstreamer1.0-pulseaudio gstreamer1.0-alsa \
+    # Media conversion (WXGF→JPEG/GIF, SILK→MP3)
+    ffmpeg \
     # New packages for agent-server
     xclip \
     sqlite3 \
-    # SQLCipher build needs libssl-dev
+    # Build dependencies
     libssl-dev \
-    # Frida
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================
-# Frida (for runtime instrumentation)
+# Python packages
 # ============================================
-RUN pip3 install frida-tools
+RUN pip3 install frida-tools silk-python
 
 # ============================================
 # Node.js 22 + pnpm + build tools (for native modules)
@@ -49,7 +50,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================
-# SQLCipher 4 (for WeChat DB key extraction)
+# SQLCipher 4
 # ============================================
 RUN cd /tmp \
     && curl -L https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.6.1.tar.gz | tar xz \

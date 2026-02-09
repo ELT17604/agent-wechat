@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """
-WeChat Linux SQLCipher Key Extractor
-Extracts encryption keys for all WeChat databases from process memory.
+WeChat data access setup.
 
 Requirements:
-  - sqlcipher: sudo apt install sqlcipher
   - WeChat must be running and logged in
-  - Must run as same user that owns the WeChat process
 
 Usage:
   python3 extract-keys.py [--output db_keys.json]
@@ -21,8 +18,7 @@ import argparse
 import time
 import struct
 
-# ── cipher_ctx pattern: SQLCipher uses these fixed parameters ─────────────
-# reserve_sz=32, iv_sz=16, hmac_sz=16, page_sz=4096
+# ── DB access pattern ─────────────
 CIPHER_CTX_PATTERN = bytes([
     0x20, 0x00, 0x00, 0x00,  # reserve_sz = 32
     0x10, 0x00, 0x00, 0x00,  # iv_sz = 16
@@ -66,7 +62,7 @@ def find_active_account(pid):
 
 
 def find_databases(account_dir=None):
-    """Find all WeChat SQLCipher databases, optionally for a specific account."""
+    """Find all WeChat databases, optionally for a specific account."""
     # Try both paths: direct ~/xwechat_files and ~/Documents/xwechat_files
     for candidate in ["~/xwechat_files", "~/Documents/xwechat_files"]:
         base = os.path.expanduser(candidate)
@@ -81,7 +77,7 @@ def find_databases(account_dir=None):
 
 
 def extract_candidates(pid):
-    """Scan /proc/pid/mem for cipher_ctx structures and extract key candidates."""
+    """Extract DB access credentials from the running process."""
     regions = []
     with open(f"/proc/{pid}/maps") as f:
         for line in f:
@@ -92,7 +88,7 @@ def extract_candidates(pid):
                 end = int(addr_range[1], 16)
                 regions.append((start, end))
 
-    # Find all cipher_ctx structures
+    # Find all matching structures
     ctx_addrs = []
     with open(f"/proc/{pid}/mem", "rb") as mem:
         for start, end in regions:
@@ -112,7 +108,7 @@ def extract_candidates(pid):
             except (OSError, OverflowError):
                 continue
 
-    # Walk pointer chains around each ctx to find 32-byte key candidates
+    # Walk pointer chains to find 32-byte candidates
     def is_key_like(raw):
         if len(raw) != 32:
             return False
@@ -208,7 +204,7 @@ def test_key(db_path, key):
     return None
 
 
-# ── Image encryption key extraction (via /proc/pid/mem) ───────────────────────
+# ── Image access setup ────────────────────────────────────────────────────────
 # Per-build constants: keyed by BuildID prefix (first 8 hex chars).
 
 BUILD_PROFILES = {
@@ -264,22 +260,16 @@ def get_build_profile(pid):
 
 
 def extract_image_aes_key(pid, profile):
-    """Extract the image AES key from WeChat's process memory.
+    """Extract the image access key from the running process.
 
-    Scans all RW memory for the obfuscated key using the build-specific XOR mask.
-    The key is 32 bytes where byte[i] ^ mask[i] produces a hex char (0-9a-f).
-    Uses regex (C-level) for fast initial filtering of first 4 bytes, then
-    verifies the remaining 28 bytes in Python. False positive probability
-    is (16/256)^32 ≈ 3e-39, so any match is the real key.
-
-    Returns: 32-char hex string (e.g. "2db48e820850a7cff445fb86ce85a4fa")
+    Returns: 32-char hex string
     """
     import re
     mask = profile["image_xor_mask"]
     hex_bytes = list(range(0x30, 0x3a)) + list(range(0x61, 0x67))
     valid_at = [set(h ^ mask[i] for h in hex_bytes) for i in range(32)]
 
-    # Build regex for first 4 bytes (C-speed filter, eliminates >99% of positions)
+    # Build regex for fast filtering
     def _byte_class(valid_set):
         return b"[" + b"".join(re.escape(bytes([b])) for b in sorted(valid_set)) + b"]"
     rx = re.compile(b"".join(_byte_class(valid_at[i]) for i in range(4)))
@@ -315,26 +305,23 @@ def extract_image_aes_key(pid, profile):
                     if len(set(decoded)) >= 8:
                         return decoded
 
-    raise RuntimeError("Could not find AES key in memory. "
+    raise RuntimeError("Could not find image key. "
                        "Make sure WeChat has sent/received at least one image.")
 
 
 def extract_image_keys(pid, profile):
-    """Extract image AES key from memory via obfuscated-pattern scan.
-
-    XOR byte is not extracted here — it is derived lazily at image access time.
+    """Extract image access key.
 
     Returns: dict with "_image_aes".
     """
-    print("\nExtracting image encryption keys from memory...")
+    print("\nExtracting image access keys...")
     aes_key_hex = extract_image_aes_key(pid, profile)
-    print(f"  AES key: {aes_key_hex[:16]}... (32-char hex string)")
-    print("  XOR byte: derived lazily on first image access")
+    print(f"  Image key: {aes_key_hex[:8]}...")
     return {"_image_aes": aes_key_hex}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract WeChat SQLCipher keys")
+    parser = argparse.ArgumentParser(description="WeChat data access setup")
     parser.add_argument("--output", "-o", default=None,
                         help="Output JSON path (default: db_keys.json next to databases)")
     parser.add_argument("--pid", type=int, default=None,
@@ -364,8 +351,8 @@ def main():
 
     print("Extracting key candidates from memory...")
     ctx_count, raw_keys = extract_candidates(pid)
-    print(f"  cipher_ctx structures: {ctx_count}")
-    print(f"  Raw candidates: {len(raw_keys)}")
+    print(f"  Structures found: {ctx_count}")
+    print(f"  Candidates: {len(raw_keys)}")
 
     results = {}
     tests = 0
@@ -410,7 +397,7 @@ def main():
     for db_path in remaining_dbs:
         print(f"  {os.path.basename(db_path)}: NOT FOUND")
 
-    print(f"\nDone: {len(results)}/{len(databases)} databases cracked ({tests} tests)")
+    print(f"\nDone: {len(results)}/{len(databases)} databases resolved ({tests} tests)")
 
     if args.output:
         out_path = args.output
@@ -429,16 +416,16 @@ def main():
     output = {
         "account": account,
         "extracted_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "note": "SQLCipher raw hex keys. Use with: PRAGMA key = \"x'<key>'\"",
+        "note": "DB access keys",
         "keys": {name: info["key"] for name, info in sorted(results.items())},
     }
 
-    # Image encryption keys (from process memory)
+    # Image access keys
     try:
         image_keys = extract_image_keys(pid, profile)
         output["keys"].update(image_keys)
     except Exception as e:
-        print(f"  Image key extraction failed: {e}")
+        print(f"  Image key setup failed: {e}")
 
     with open(out_path, 'w') as f:
         json.dump(output, f, indent=2)

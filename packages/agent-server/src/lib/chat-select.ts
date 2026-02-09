@@ -1,11 +1,7 @@
 /**
- * Programmatic chat selection via Frida hook + a11y-guided click.
+ * Programmatic chat selection via a11y-guided click.
  *
- * Uses the chat-select tool which:
- * 1. Enumerates sessions via Frida heap scan
- * 2. Hooks selectSession() in the WeChat binary
- * 3. Clicks a visible chat item (found via a11y tree)
- * 4. Hook redirects the click to the target chat
+ * Uses the chat-select tool to open a specific chat in the WeChat UI.
  */
 
 import { execCommand, type ExecOptions } from "./exec.js";
@@ -35,7 +31,7 @@ export async function openChat(
 ): Promise<OpenChatResult> {
   const result = await execCommand("chat-select", [chatId], {
     ...options,
-    timeout: 120_000, // Frida operations can be slow
+    timeout: 120_000, // Chat selection can be slow
   });
 
   // Log stderr (debug output from chat-select.py)
@@ -60,7 +56,7 @@ export async function openChat(
  *
  * Returns a map of username -> index in the session list.
  */
-export async function listFridaSessions(
+export async function listChatSessions(
   options?: ExecOptions
 ): Promise<ListSessionsResult> {
   const result = await execCommand("chat-select", ["--list"], {

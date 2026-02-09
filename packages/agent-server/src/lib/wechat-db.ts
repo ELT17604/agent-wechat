@@ -1,8 +1,5 @@
 /**
- * WeChat SQLCipher database query helpers.
- *
- * Uses the `sqlcipher` CLI (built from source in the Docker image)
- * to query WeChat's encrypted databases.
+ * WeChat database query helpers.
  */
 
 import { execSync } from "child_process";
@@ -10,7 +7,7 @@ import fs from "fs";
 import path from "path";
 
 /**
- * Query a WeChat SQLCipher database and return parsed rows.
+ * Query a WeChat database and return parsed rows.
  *
  * Uses `-json` output mode for structured results. Falls back to raw
  * string output if json mode produces no results.
@@ -37,7 +34,7 @@ export function queryWechatDb(
   const trimmed = result.trim();
   if (!trimmed) return [];
 
-  // sqlcipher outputs "ok" for PRAGMAs before the JSON array.
+  // DB tool outputs "ok" for PRAGMAs before the JSON array.
   // Find the JSON array in the output.
   const jsonStart = trimmed.indexOf("[");
   if (jsonStart === -1) return [];

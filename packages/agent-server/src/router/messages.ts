@@ -61,6 +61,9 @@ export const messagesRouter = router({
       if (!session) {
         return { success: false, error: "No session available" };
       }
+      if (!session.loggedInUser) {
+        return { success: false, error: "NOT_LOGGED_IN" };
+      }
 
       // Decode base64 image to temp file (if provided)
       let imagePath: string | undefined;

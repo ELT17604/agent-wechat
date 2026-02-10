@@ -157,9 +157,9 @@ authCmd
   .description("Check login status")
   .action(async () => {
     const client = getClient();
-    const { isLoggedIn } = await client.status.authStatus.query();
+    const { isLoggedIn, loggedInUser } = await client.status.authStatus.query();
     if (isLoggedIn) {
-      console.log("Logged in");
+      console.log(`Logged in${loggedInUser ? ` as ${loggedInUser}` : ""}`);
     } else {
       console.log("Not logged in");
     }
@@ -560,6 +560,9 @@ async function cmdChatOpen(client: Client, chatId: string) {
 
   if (result.ok) {
     console.log(`Chat opened: ${result.username} (index ${result.index})`);
+  } else if (result.error === "NOT_LOGGED_IN") {
+    console.error("Not logged in. Run: pnpm cli auth login");
+    process.exit(1);
   } else {
     console.error(`Failed: ${result.error}`);
     process.exit(1);
@@ -581,6 +584,9 @@ async function cmdSend(client: Client, chatId: string, text?: string, image?: { 
     if (result.messageId) {
       console.log(`Message ID: ${result.messageId}`);
     }
+  } else if (result.error === "NOT_LOGGED_IN") {
+    console.error("Not logged in. Run: pnpm cli auth login");
+    process.exit(1);
   } else {
     console.error(`Failed to send message: ${result.error || "Unknown error"}`);
     process.exit(1);

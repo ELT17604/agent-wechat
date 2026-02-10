@@ -69,6 +69,9 @@ export const chatsRouter = router({
       if (!session) {
         return { ok: false, error: "No session available" };
       }
+      if (!session.loggedInUser) {
+        return { ok: false, error: "NOT_LOGGED_IN" };
+      }
 
       const db = getDb();
       const context = await createContext(session, db);

@@ -60,7 +60,7 @@ export const statusRouter = router({
    * Check auth status via FSM observation
    * Runs one FSM cycle to update state and returns isLoggedIn
    */
-  authStatus: publicProcedure.query(async ({ ctx }): Promise<{ isLoggedIn: boolean }> => {
+  authStatus: publicProcedure.query(async ({ ctx }): Promise<{ isLoggedIn: boolean; loggedInUser?: string }> => {
     const session = ctx.session;
     if (!session) {
       return { isLoggedIn: false };
@@ -81,7 +81,10 @@ export const statusRouter = router({
 
     await runExecution(execution);
 
-    return { isLoggedIn: context.state.mainWindow.isLoggedIn };
+    return {
+      isLoggedIn: context.state.mainWindow.isLoggedIn,
+      loggedInUser: session.loggedInUser,
+    };
   }),
 
   /**

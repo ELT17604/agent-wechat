@@ -181,6 +181,10 @@ export const sendParamsSchema = z.object({
   chatId: z.string().min(1),
   text: z.string().optional(),
   files: z.array(z.string()).optional(),
+  image: z.object({
+    data: z.string(),
+    mimeType: z.string(),
+  }).optional(),
 });
 
 export const sendResultSchema = z.object({

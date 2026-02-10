@@ -1,3 +1,4 @@
+import fs from "fs";
 import { router, publicProcedure } from "./trpc.js";
 import {
   sendParamsSchema,
@@ -47,13 +48,13 @@ export const messagesRouter = router({
     }),
 
   /**
-   * Send a text message via FSM plan
+   * Send a text message or image via FSM plan
    */
   send: publicProcedure
     .input(sendParamsSchema)
     .mutation(async ({ input, ctx }): Promise<SendResult> => {
-      if (!input.text) {
-        return { success: false, error: "No text provided" };
+      if (!input.text && !input.image) {
+        return { success: false, error: "No text or image provided" };
       }
 
       const session = ctx.session;
@@ -61,20 +62,43 @@ export const messagesRouter = router({
         return { success: false, error: "No session available" };
       }
 
-      const db = getDb();
-      const context = await createContext(session, db);
+      // Decode base64 image to temp file (if provided)
+      let imagePath: string | undefined;
+      let imageMime: string | undefined;
+      if (input.image) {
+        const ext = input.image.mimeType === "image/jpeg" ? ".jpg" :
+                    input.image.mimeType === "image/gif" ? ".gif" : ".png";
+        imagePath = `/tmp/send_image_${Date.now()}${ext}`;
+        fs.writeFileSync(imagePath, Buffer.from(input.image.data, "base64"));
+        imageMime = input.image.mimeType;
+      }
 
-      const execution = createExecution(
-        sendMessagePlan,
-        { chatId: input.chatId, message: input.text },
-        context,
-        {
-          emit: () => {},
-          abortSignal: ctx.abortSignal,
+      try {
+        const db = getDb();
+        const context = await createContext(session, db);
+
+        const execution = createExecution(
+          sendMessagePlan,
+          {
+            chatId: input.chatId,
+            message: input.text,
+            imagePath,
+            imageMime,
+          },
+          context,
+          {
+            emit: () => {},
+            abortSignal: ctx.abortSignal,
+          }
+        );
+
+        const result = await runExecution(execution);
+        return { success: result.success, error: result.error };
+      } finally {
+        // Clean up temp file
+        if (imagePath) {
+          try { fs.unlinkSync(imagePath); } catch {}
         }
-      );
-
-      const result = await runExecution(execution);
-      return { success: result.success, error: result.error };
+      }
     }),
 });

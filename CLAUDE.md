@@ -162,16 +162,14 @@ Key behaviors:
 
 **Plans** (`src/plans/send-message.ts`):
 
-Send message plan: `opening → focusing → inputting → sending → confirming → done`
+Send message plan: `opening → focusing → inputting → confirming → done`
 
 ```
 opening      Open target chat via openChat()
    ↓
 focusing     Find EDITABLE text sibling of Send(S) button, click to focus
    ↓
-inputting    Verify FOCUSED, Ctrl+A + paste message text
-   ↓
-sending      Verify Send(S) NOT DISABLED, click it
+inputting    Text: Ctrl+A + paste + Enter; Image: paste-image + Enter
    ↓
 confirming   Verify Send(S) DISABLED (message sent), retry up to 5x
    ↓
@@ -183,6 +181,7 @@ Key behaviors:
 - Finds edit component by structure: sibling of `push-button[name="Send(S)"]` with EDITABLE state
 - A11y tree outputs DISABLED state for interactive elements (push-button, text, etc.) when ENABLED is absent
 - Ctrl+A before paste ensures any existing text is replaced
+- Image sending: CLI reads file → base64 via tRPC → server writes temp file → `paste-image` tool copies to clipboard via `xclip -t <mime>` → Ctrl+V paste → Enter to confirm
 
 ### CSS-like Selectors
 
@@ -208,6 +207,7 @@ findAncestor(button, (n) => n.role === 'frame' && n.name === 'WeChat')
 **UI Interaction:**
 - `click <x> <y>` - click coordinates
 - `input "<text>"` - type via clipboard paste (Unicode-safe)
+- `paste-image <file> [mime]` - paste image via clipboard (xclip -t)
 - `key <combo>` - press keys (Return, Escape, ctrl+a, etc.)
 - `scroll <up|down> [amount]`
 
@@ -221,7 +221,8 @@ pnpm cli auth login      # Login flow
 pnpm cli chats list      # List chats
 pnpm cli chats open <id> # Open a chat in the UI
 pnpm cli find <name>     # Find chat by name
-pnpm cli messages send <id> --text "msg"  # Send message to chat
+pnpm cli messages send <id> --text "msg"    # Send text message
+pnpm cli messages send <id> --image f.png  # Send image
 ```
 
 ## Building
@@ -374,6 +375,6 @@ Chat data is read directly from WeChat's local databases.
 - [x] Plan-local state for execution-scoped data
 - [x] Chat open via FSM plan (with current-selection detection)
 - [x] Async selectAction for non-blocking tool calls in plans
-- [x] Send message via FSM plan
+- [x] Send message via FSM plan (text + image)
 - [ ] Message history from WeChat DBs (message_0.db)
 - [ ] File sending

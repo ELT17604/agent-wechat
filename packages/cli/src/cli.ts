@@ -235,12 +235,27 @@ messagesCmd
   .command("send <chatId>")
   .description("Send a message to a chat")
   .option("--text <text>", "Text message to send")
-  .action(async (chatId: string, opts: { text?: string }) => {
-    if (!opts.text) {
-      console.error("Must provide --text");
+  .option("--image <path>", "Image file to send")
+  .action(async (chatId: string, opts: { text?: string; image?: string }) => {
+    if (!opts.text && !opts.image) {
+      console.error("Must provide --text or --image");
       process.exit(1);
     }
-    await cmdSend(getClient(), chatId, opts.text);
+
+    let image: { data: string; mimeType: string } | undefined;
+    if (opts.image) {
+      if (!fs.existsSync(opts.image)) {
+        console.error(`File not found: ${opts.image}`);
+        process.exit(1);
+      }
+      const data = fs.readFileSync(opts.image);
+      const ext = path.extname(opts.image).toLowerCase();
+      const mimeType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
+                       ext === ".gif" ? "image/gif" : "image/png";
+      image = { data: data.toString("base64"), mimeType };
+    }
+
+    await cmdSend(getClient(), chatId, opts.text, image);
   });
 
 // ============================================
@@ -540,9 +555,13 @@ async function cmdChatOpen(client: Client, chatId: string) {
   }
 }
 
-async function cmdSend(client: Client, chatId: string, text: string) {
-  console.log(`Sending message to ${chatId}...`);
-  const result = await client.messages.send.mutate({ chatId, text });
+async function cmdSend(client: Client, chatId: string, text?: string, image?: { data: string; mimeType: string }) {
+  console.log(`Sending ${image ? "image" : "message"} to ${chatId}...`);
+  const result = await client.messages.send.mutate({
+    chatId,
+    ...(text ? { text } : {}),
+    ...(image ? { image } : {}),
+  });
 
   if (result.success) {
     console.log("Message sent successfully!");

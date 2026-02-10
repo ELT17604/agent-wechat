@@ -143,6 +143,10 @@ export interface SendParams {
   chatId: string;
   text?: string;
   files?: string[];
+  image?: {
+    data: string;       // base64-encoded
+    mimeType: string;   // "image/png", "image/jpeg", "image/gif"
+  };
 }
 
 export interface SendResult {

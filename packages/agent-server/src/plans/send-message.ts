@@ -3,15 +3,20 @@ import type { Plan, ActionParams, SelectedAction, Action, A11yNode } from "../ia
 import { PopupActions, CommonActions, clickBounds } from "../ia/actions.js";
 import { querySelector } from "../ia/selectors.js";
 import { openChat, type OpenChatResult } from "../lib/chat-select.js";
+import { execCommand } from "../lib/exec.js";
 
 export interface SendMessageParams extends ActionParams {
   chatId: string;
-  message: string;
+  message?: string;
+  imagePath?: string;
+  imageMime?: string;
 }
 
 const sendMessageParamsSchema = z.object({
   chatId: z.string(),
-  message: z.string(),
+  message: z.string().optional(),
+  imagePath: z.string().optional(),
+  imageMime: z.string().optional(),
 });
 
 type SendMessagePhase =
@@ -53,20 +58,20 @@ function findEditAndSendButton(a11y: A11yNode) {
 /**
  * Send Message Plan
  *
- * Opens a chat and sends a text message via the WeChat UI.
+ * Opens a chat and sends a text message or image via the WeChat UI.
  *
  * Phases fall through when preconditions are already met (no unnecessary waits).
  *
  * Phases:
  *   opening    → Open the target chat (reuses openChat)
  *   focusing   → Find the edit component and focus it
- *   inputting  → Verify focus, Ctrl+A + type + Enter (sends immediately)
+ *   inputting  → Text: Ctrl+A + type + Enter; Image: paste-image + Enter
  *   confirming → Verify Send(S) disabled (message sent)
  *   done       → Goal reached
  */
 export const sendMessagePlan: Plan<SendMessageParams, SendMessagePlanState> = {
   id: "send_message",
-  description: "Send a text message to a chat",
+  description: "Send a text message or image to a chat",
   params: sendMessageParamsSchema,
 
   initialPlanState: () => ({
@@ -168,7 +173,7 @@ export const sendMessagePlan: Plan<SendMessageParams, SendMessagePlanState> = {
           return { action: clickBounds(editNode.bounds), metadata: mainMeta };
         }
 
-        // ── inputting: Verify focus, type message + Enter to send ──
+        // ── inputting: Type message + Enter, or paste image + Enter ──
         case "inputting": {
           const found = findEditAndSendButton(a11y);
           if (!found) {
@@ -179,7 +184,21 @@ export const sendMessagePlan: Plan<SendMessageParams, SendMessagePlanState> = {
             return null; // Focus click didn't work
           }
 
-          // Select all, type message, press Enter to send
+          planState.phase = "confirming";
+
+          // Image path: paste image via clipboard, then Enter to confirm
+          if (params.imagePath) {
+            const args = [params.imagePath];
+            if (params.imageMime) args.push(params.imageMime);
+            await execCommand("paste-image", args);
+            return { action: { type: "key", combo: "Return" }, metadata: mainMeta };
+          }
+
+          // Text: select all, type message, press Enter to send
+          if (!params.message) {
+            return null; // Nothing to send
+          }
+
           const inputAndSend: Action = {
             type: "sequence",
             actions: [
@@ -189,7 +208,6 @@ export const sendMessagePlan: Plan<SendMessageParams, SendMessagePlanState> = {
             ],
           };
 
-          planState.phase = "confirming";
           return { action: inputAndSend, metadata: mainMeta };
         }
 

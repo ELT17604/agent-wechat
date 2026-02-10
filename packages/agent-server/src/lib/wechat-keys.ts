@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { eq, and } from "drizzle-orm";
+import { execCommand } from "./exec.js";
 import type { DatabaseInstance } from "../db/index.js";
 import { wechatKeys } from "../db/schema.js";
 import { getDbPath, listAccountDbs } from "./wechat-db.js";
@@ -60,6 +61,41 @@ export function extractKeys(wechatPid: number): Record<string, string> {
     return {};
   } finally {
     // Clean up temp file
+    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Extract all WeChat DB access credentials (async, non-blocking).
+ *
+ * Same as extractKeys but uses execCommand instead of execSync.
+ */
+export async function extractKeysAsync(wechatPid: number): Promise<Record<string, string>> {
+  const outPath = `/tmp/wechat_keys_${wechatPid}.json`;
+
+  // Script may exit non-zero if some DBs fail — partial success is fine.
+  // execCommand always resolves (never rejects).
+  await execCommand(
+    "env",
+    ["HOME=/home/wechat", "python3", "/opt/tools/extract-keys.py", "--pid", String(wechatPid), "--output", outPath],
+    { timeout: 120_000 }
+  );
+
+  try {
+    if (fs.existsSync(outPath)) {
+      const output: ExtractKeysOutput = JSON.parse(
+        fs.readFileSync(outPath, "utf-8")
+      );
+      const dbKeys = Object.keys(output.keys).filter(k => !k.startsWith("_"));
+      const hasImageAes = !!output.keys["_image_aes"];
+      console.log(`[wechat-keys] Extracted ${dbKeys.length} DB keys, image key: ${hasImageAes ? "yes" : "no"}`);
+      if (hasImageAes) {
+        console.log(`[wechat-keys]   _image_aes: ${output.keys["_image_aes"]!.slice(0, 16)}...`);
+      }
+      return output.keys;
+    }
+    return {};
+  } finally {
     try { fs.unlinkSync(outPath); } catch { /* ignore */ }
   }
 }

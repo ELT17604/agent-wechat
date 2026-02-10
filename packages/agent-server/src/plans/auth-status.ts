@@ -23,5 +23,5 @@ export const authStatusPlan: Plan<AuthStatusParams> = {
   isGoalReached: () => true,
 
   // No actions needed - just observe
-  selectAction: (): SelectedAction | null => null,
+  selectAction: async (): Promise<SelectedAction | null> => null,
 };

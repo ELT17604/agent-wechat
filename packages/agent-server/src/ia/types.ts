@@ -271,7 +271,7 @@ export interface Plan<TParams extends ActionParams = ActionParams, TPlanState = 
   initialPlanState?: () => TPlanState;
   isGoalReached: (args: Omit<PlanArgs<TParams, TPlanState>, "a11y" | "identified">) => boolean;
   /** Returns SelectedAction with action + metadata (or null if no action needed) */
-  selectAction: (args: PlanArgs<TParams, TPlanState>) => SelectedAction | null;
+  selectAction: (args: PlanArgs<TParams, TPlanState>) => Promise<SelectedAction | null>;
 }
 
 // ============================================

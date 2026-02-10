@@ -31,12 +31,20 @@ BUILD_PROFILES = {
         "SELECT_SESSION": 0x38bce80,
         "USERNAME_OFF": 0x120,
         "ELEM_SIZE": 16,
+        "MANAGER_VT_OFF": 0x7b39db8,
+        "CTRL_OFF": 0xe8,
+        "CUR_SESS_OFF": 0x40,
+        "CUR_SESS_UNAME_OFF": 0x120,
     },
     # WeChat Linux 4.x x86_64 (BuildID: 20420b6d...)
     "20420b6d": {
         "SELECT_SESSION": 0x3907960,
         "USERNAME_OFF": 0x138,
         "ELEM_SIZE": 16,
+        "MANAGER_VT_OFF": 0x7fc2f50,
+        "CTRL_OFF": 0x180,
+        "CUR_SESS_OFF": 0x40,
+        "CUR_SESS_UNAME_OFF": 0x98,
     },
 }
 
@@ -256,9 +264,63 @@ def kill_frida(proc):
 
 
 def enumerate_sessions(pid, profile):
-    """Scan heap for session vector, return (dict of {username: index}, vector_base_hex)."""
+    """Scan heap for session vector + current selection.
+
+    Returns (dict of {username: index}, vector_base_hex, vector_count, current_sel_username|None).
+    """
     username_off = profile["USERNAME_OFF"]
     elem_size = profile["ELEM_SIZE"]
+    manager_vt_off = profile.get("MANAGER_VT_OFF")
+    ctrl_off = profile.get("CTRL_OFF")
+    cur_sess_off = profile.get("CUR_SESS_OFF")
+    cur_sess_uname_off = profile.get("CUR_SESS_UNAME_OFF")
+
+    # Build current-selection detection JS (only if offsets available)
+    current_sel_js = ""
+    if manager_vt_off is not None:
+        current_sel_js = f"""
+// --- Current selection detection ---
+var MANAGER_VT = b.add(0x{manager_vt_off:x});
+var CTRL_OFF = 0x{ctrl_off:x};
+var CUR_SESS_OFF = 0x{cur_sess_off:x};
+var CUR_SESS_UNAME_OFF = 0x{cur_sess_uname_off:x};
+
+function detectCurrentSelection() {{
+    try {{
+        // Heap scan for manager vtable pointer
+        var vtPattern = ptrToPattern(MANAGER_VT);
+        var found = null;
+        Process.enumerateRanges("rw-").forEach(function(range) {{
+            if (found || range.size > 200*1024*1024) return;
+            try {{
+                Memory.scanSync(range.base, range.size, vtPattern).forEach(function(hit) {{
+                    if (found) return;
+                    try {{
+                        var ctrl = hit.address.add(CTRL_OFF).readPointer();
+                        if (ctrl.isNull() || ctrl.compare(ptr(0x10000)) < 0) return;
+                        var curSess = ctrl.add(CUR_SESS_OFF).readPointer();
+                        if (curSess.isNull() || curSess.compare(ptr(0x10000)) < 0) return;
+                        var uname = readStdString(curSess.add(CUR_SESS_UNAME_OFF));
+                        if (uname && uname.length >= 2) {{
+                            found = uname;
+                        }}
+                    }} catch(e) {{}}
+                }});
+            }} catch(e) {{}}
+        }});
+        return found;
+    }} catch(e) {{
+        return null;
+    }}
+}}
+
+var curSel = detectCurrentSelection();
+if (curSel) {{
+    console.log("CURRENT_SEL " + curSel);
+}} else {{
+    console.log("CURRENT_SEL_NONE");
+}}
+"""
 
     write_js("/tmp/_cs_enum.js", f"""
 var w = Process.getModuleByName("wechat");
@@ -361,6 +423,7 @@ if (sessionElements.length === 0) {{
             var u = readStdString(ep.add(UNAME_OFF));
             if (u) console.log("SESSION " + i + " " + u);
         }}
+{current_sel_js}
         console.log("SCRIPT_DONE");
     }}
 }}
@@ -379,12 +442,15 @@ if (sessionElements.length === 0) {{
         raw_sessions = []  # [(raw_index, username), ...] in vector order
         vector_base = None
         vector_count = 0
+        current_sel = None
         for line in lines:
             stripped = line.strip()
             if stripped.startswith("VECTOR "):
                 parts = stripped.split()
                 vector_base = parts[1]
                 vector_count = int(parts[2].split("=")[1])
+            elif stripped.startswith("CURRENT_SEL ") and not stripped.startswith("CURRENT_SEL_NONE"):
+                current_sel = stripped.split(None, 1)[1]
             elif stripped.startswith("SESSION"):
                 parts = stripped.split(None, 2)
                 if len(parts) >= 3:
@@ -410,6 +476,9 @@ if (sessionElements.length === 0) {{
                 sessions[uname] = filtered_idx
                 filtered_idx += 1
 
+            if current_sel:
+                log(f"[chat-select] Current selection: {current_sel}")
+
             log(f"[chat-select] Filtered: {len(sessions)} sessions (excluded {gh_count} official accounts)")
             for i, (uname, idx) in enumerate(sorted(sessions.items(), key=lambda x: x[1])):
                 if i < 15:
@@ -417,8 +486,8 @@ if (sessionElements.length === 0) {{
                 elif i == 15:
                     log(f"[chat-select]   ... and {len(sessions) - 15} more")
 
-            return sessions, vector_base, vector_count
-    return {}, None, 0
+            return sessions, vector_base, vector_count, current_sel
+    return {}, None, 0, None
 
 
 def select_by_index(pid, profile, target_index, click_coords, vector_base, vector_count):
@@ -530,8 +599,31 @@ Interceptor.attach(addr, {{
 
 
 def main():
-    if len(sys.argv) < 2:
-        result_json(False, error="Usage: chat-select <username> | chat-select --list")
+    # Parse args: chat-select [--force] [--click-xy X Y] [--list] <username>
+    args = sys.argv[1:]
+    if not args:
+        result_json(False, error="Usage: chat-select [--force] [--click-xy X Y] <username> | chat-select --list")
+
+    force = False
+    click_xy = None
+    positional = []
+
+    i = 0
+    while i < len(args):
+        if args[i] == "--force":
+            force = True
+            i += 1
+        elif args[i] == "--click-xy":
+            if i + 2 >= len(args):
+                result_json(False, error="--click-xy requires X Y arguments")
+            click_xy = (int(args[i + 1]), int(args[i + 2]))
+            i += 3
+        else:
+            positional.append(args[i])
+            i += 1
+
+    if not positional:
+        result_json(False, error="Usage: chat-select [--force] [--click-xy X Y] <username> | chat-select --list")
 
     pid = get_pid()
     if not pid:
@@ -544,15 +636,15 @@ def main():
 
     # Enumerate sessions
     log("[chat-select] Enumerating sessions...")
-    sessions, vector_base, vector_count = enumerate_sessions(pid, profile)
+    sessions, vector_base, vector_count, current_sel = enumerate_sessions(pid, profile)
     if not sessions:
         result_json(False, error="No sessions found. Is WeChat logged in with chats visible?")
 
     # --list mode
-    if sys.argv[1] == "--list":
+    if positional[0] == "--list":
         result_json(True, sessions=sessions)
 
-    target = sys.argv[1]
+    target = positional[0]
     if is_official_account(target):
         result_json(False, error=f"'{target}' is an official account and cannot be opened")
     if target not in sessions:
@@ -565,8 +657,15 @@ def main():
     target_index = sessions[target]
     log(f"[chat-select] Target: {target} -> index {target_index}")
 
-    # Find a clickable chat item via a11y tree
-    click_coords = find_chat_item_from_a11y()
+    # Current-selection skip: if not forced and target already selected, skip
+    if not force and current_sel and current_sel == target:
+        log(f"[chat-select] Target already selected (current_sel={current_sel}), skipping")
+        result_json(True, username=target, index=target_index, skipped=True)
+
+    # Find click coordinates: use --click-xy if provided, else fall back to a11y
+    click_coords = click_xy
+    if not click_coords:
+        click_coords = find_chat_item_from_a11y()
     if not click_coords:
         result_json(False, error="No clickable chat item found in a11y tree. Is the chat list visible?")
 

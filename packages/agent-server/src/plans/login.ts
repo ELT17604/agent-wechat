@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { sessions } from "../db/schema.js";
 import { getSessionLoggedInUser, clearSessionData, updateSessionLoggedInUser } from "../db/queries.js";
 import { findAccountDir, findWechatPid } from "../lib/wechat-db.js";
-import { extractKeys, storeKeys, needsKeyExtraction } from "../lib/wechat-keys.js";
+import { extractKeysAsync, storeKeys, needsKeyExtraction } from "../lib/wechat-keys.js";
 
 /**
  * Login plan params
@@ -69,7 +69,7 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
     );
   },
 
-  selectAction: ({ state, params, identified, planState, db, sessionId }): SelectedAction | null => {
+  selectAction: async ({ state, params, identified, planState, db, sessionId }): Promise<SelectedAction | null> => {
     const mainMeta = identified.mainWindow?.metadata;
 
     // === POPUPS (error/confirm/info) ===
@@ -269,7 +269,7 @@ export const loginPlan: Plan<LoginParams, LoginPlanState> = {
 
           if (wechatPid && planState.accountDir) {
             try {
-              const keys = extractKeys(wechatPid);
+              const keys = await extractKeysAsync(wechatPid);
               storeKeys(db, sessionId, planState.accountDir, keys);
             } catch (error) {
               console.error("[login] Key extraction failed:", error);

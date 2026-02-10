@@ -8,7 +8,10 @@ import {
 import type { Chat } from "@thisnick/agent-wechat-shared";
 import { getStoredKeys } from "../lib/wechat-keys.js";
 import { listChatsFromWechatDb, getChatByUsername, findChatsByName } from "../lib/wechat-chats.js";
-import { openChat } from "../lib/chat-select.js";
+import { getDb } from "../db/index.js";
+import { createContext } from "../context/index.js";
+import { createExecution, runExecution } from "../execution/index.js";
+import { chatOpenPlan } from "../plans/index.js";
 
 export const chatsRouter = router({
   /**
@@ -57,11 +60,35 @@ export const chatsRouter = router({
     }),
 
   /**
-   * Open a chat in WeChat UI (triggers media downloads + clears unread)
+   * Open a chat in WeChat UI via FSM plan (triggers media downloads + clears unread)
    */
   open: publicProcedure
     .input(openChatParamsSchema)
     .mutation(async ({ input, ctx }) => {
-      return await openChat(input.chatId, { session: ctx.session });
+      const session = ctx.session;
+      if (!session) {
+        return { ok: false, error: "No session available" };
+      }
+
+      const db = getDb();
+      const context = await createContext(session, db);
+      const abortController = new AbortController();
+
+      const execution = createExecution(
+        chatOpenPlan,
+        { chatId: input.chatId },
+        context,
+        {
+          emit: () => {},
+          abortSignal: abortController.signal,
+        }
+      );
+
+      const result = await runExecution(execution);
+
+      if (result.success && execution.planState.result) {
+        return execution.planState.result;
+      }
+      return { ok: false, error: result.error || "Chat open failed" };
     }),
 });

@@ -143,6 +143,23 @@ done             Emit login_success, goal check passes
 
 The plan handles all emissions directly via `planState` (QR changes, phone_confirm, status messages, login_success) rather than using effect watchers.
 
+**Plans** (`src/plans/chat-open.ts`):
+
+Chat open plan: `pending → done` (single FSM step)
+
+```
+pending    Observe IA state, find click target from a11y tree
+   ↓       Calls openChat() with coordinates + force flag
+done       Result stored in planState.result, goal check passes
+```
+
+Key behaviors:
+- **`chat_open` IA** (a chat is already selected): Uses Frida current-selection detection to skip if target is already open
+- **`chat` IA** (no chat selected): Passes `--force` to bypass current-selection check (memory detection unreliable after deselect)
+- Click coordinates from a11y tree passed via `--click-xy` to `chat-select.py`
+
+**Async selectAction:** `Plan.selectAction` returns `Promise<SelectedAction | null>`, allowing plans to `await` tool calls (e.g., `openChat()`) without blocking the event loop. The execution loop `await`s each `selectAction` call.
+
 ### CSS-like Selectors
 
 The a11y tree uses CSS-like selectors (`src/ia/selectors.ts`):
@@ -254,6 +271,7 @@ On startup, `initDb()` in `src/db/index.ts` does:
 | A11y tree | Parent refs added | Enables `findAncestor` for frame scoping |
 | A11y selectors | CSS-like syntax | Familiar, composable |
 | Context | Persisted to SQLite | Survives restarts |
+| selectAction | Async (returns Promise) | Plans can await tool calls without blocking |
 
 ## Adding New Features
 
@@ -330,6 +348,8 @@ Chat data is read directly from WeChat's local databases.
 - [x] Frame-scoped click/type actions
 - [x] Per-state commands with shared base (window controls)
 - [x] Plan-local state for execution-scoped data
+- [x] Chat open via FSM plan (with current-selection detection)
+- [x] Async selectAction for non-blocking tool calls in plans
 - [ ] Send message via FSM plan
 - [ ] Message history from WeChat DBs (message_0.db)
 - [ ] File sending

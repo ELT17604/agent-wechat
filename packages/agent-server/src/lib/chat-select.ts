@@ -6,10 +6,11 @@
 
 import { execCommand, type ExecOptions } from "./exec.js";
 
-interface OpenChatResult {
+export interface OpenChatResult {
   ok: boolean;
   username?: string;
   index?: number;
+  skipped?: boolean;
   error?: string;
 }
 
@@ -17,6 +18,11 @@ interface ListSessionsResult {
   ok: boolean;
   sessions?: Record<string, number>;
   error?: string;
+}
+
+export interface OpenChatOptions extends ExecOptions {
+  force?: boolean;
+  clickXY?: { x: number; y: number };
 }
 
 /**
@@ -27,9 +33,14 @@ interface ListSessionsResult {
  */
 export async function openChat(
   chatId: string,
-  options?: ExecOptions
+  options?: OpenChatOptions
 ): Promise<OpenChatResult> {
-  const result = await execCommand("chat-select", [chatId], {
+  const args: string[] = [];
+  if (options?.force) args.push("--force");
+  if (options?.clickXY) args.push("--click-xy", String(options.clickXY.x), String(options.clickXY.y));
+  args.push(chatId);
+
+  const result = await execCommand("chat-select", args, {
     ...options,
     timeout: 120_000, // Chat selection can be slow
   });

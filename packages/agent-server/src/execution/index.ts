@@ -285,7 +285,7 @@ export async function runExecution<TParams extends ActionParams, TPlanState = un
     await execution.context.save();
 
     // 6. Select action: Plan returns SelectedAction with action + metadata
-    const selected = execution.plan.selectAction({
+    const selected = await execution.plan.selectAction({
       state: newAppState,
       params: execution.params,
       db: execution.context.db,

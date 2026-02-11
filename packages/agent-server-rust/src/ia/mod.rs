@@ -4,7 +4,7 @@ pub mod selectors;
 pub mod states;
 pub mod types;
 
-use types::{A11yNode, IAState, IdentifiedState, IdentifiedStates, IdentifyArgs};
+pub use types::{A11yNode, IAState, IdentifiedState, IdentifiedStates, IdentifyArgs};
 
 use states::chat::CHAT_STATES;
 use states::contact_card::CONTACT_CARD_STATE;
@@ -31,7 +31,7 @@ pub fn identify_states(a11y_tree: &A11yNode, screenshot: &str) -> IdentifiedStat
         .map(|s| s.as_ref() as &dyn IAState)
         .chain(LOGIN_STATES.iter().map(|s| s.as_ref() as &dyn IAState))
         .chain(POPUP_STATES.iter().map(|s| s.as_ref() as &dyn IAState))
-        .chain(std::iter::once(&*CONTACT_CARD_STATE as &dyn IAState))
+        .chain(std::iter::once(&**CONTACT_CARD_STATE as &dyn IAState))
         .collect();
 
     for state in &all_states {

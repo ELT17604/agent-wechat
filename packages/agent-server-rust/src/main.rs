@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 mod context;
 mod db;
 mod effects;
 mod execution;
 mod ia;
-mod lib;
+mod tools;
 mod plans;
 mod router;
 mod sessions;

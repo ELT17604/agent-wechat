@@ -46,11 +46,11 @@ pub struct A11yNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Action {
-    #[serde(rename = "click")]
+    #[serde(rename = "click_selector")]
     ClickSelector { selector: String },
-    #[serde(rename = "click")]
+    #[serde(rename = "click_coords")]
     ClickCoords { x: f64, y: f64 },
-    #[serde(rename = "type")]
+    #[serde(rename = "type_text")]
     Type {
         text: String,
         #[serde(skip_serializing_if = "Option::is_none")]

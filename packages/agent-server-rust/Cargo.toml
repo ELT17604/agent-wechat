@@ -42,6 +42,12 @@ tokio-stream = "0.1"
 # For WebSocket streaming
 async-stream = "0.3"
 
+# Async trait support
+async-trait = "0.1"
+
+# Cancellation
+tokio-util = "0.7"
+
 [profile.release]
 opt-level = "z"     # Optimize for size
 lto = true          # Link-time optimization

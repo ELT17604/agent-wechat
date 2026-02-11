@@ -23,7 +23,6 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@thisnick/agent-wechat-server": "workspace:^",
     "@types/node": "^20.11.19",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.5.14",

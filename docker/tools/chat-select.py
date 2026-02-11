@@ -35,6 +35,7 @@ BUILD_PROFILES = {
         "CTRL_OFF": 0xe8,
         "CUR_SESS_OFF": 0x40,
         "CUR_SESS_UNAME_OFF": 0x120,
+        "VEC_KEY_OFF": 0x168,
     },
     # WeChat Linux 4.x x86_64 (BuildID: 20420b6d...)
     "20420b6d": {
@@ -45,6 +46,8 @@ BUILD_PROFILES = {
         "CTRL_OFF": 0x180,
         "CUR_SESS_OFF": 0x40,
         "CUR_SESS_UNAME_OFF": 0x98,
+        "VEC_KEY_OFF": 0x168,
+        "VEC_LOOKUP_OFF": 0x3929ce0,
     },
 }
 
@@ -230,6 +233,7 @@ def run_frida_script(pid, script_path, timeout=30, stop_on="SCRIPT_DONE"):
             proc.wait(timeout=3)
         except Exception:
             proc.kill()
+        time.sleep(1)  # ensure frida fully detaches before next attach
     return lines
 
 
@@ -263,62 +267,48 @@ def kill_frida(proc):
 
 
 def enumerate_sessions(pid, profile):
-    """Scan heap for session vector + current selection.
+    """Find manager via vtable, read live vector + current selection.
+
+    Manager-anchored approach: finds the live manager object via its vtable
+    pointer (heap scan), then reads the session vector directly from the
+    controller. This is immune to stale session data after re-login.
 
     Returns (dict of {username: index}, vector_base_hex, vector_count, current_sel_username|None).
     """
     username_off = profile["USERNAME_OFF"]
     elem_size = profile["ELEM_SIZE"]
-    manager_vt_off = profile.get("MANAGER_VT_OFF")
-    ctrl_off = profile.get("CTRL_OFF")
-    cur_sess_off = profile.get("CUR_SESS_OFF")
-    cur_sess_uname_off = profile.get("CUR_SESS_UNAME_OFF")
+    manager_vt_off = profile["MANAGER_VT_OFF"]
+    ctrl_off = profile["CTRL_OFF"]
+    cur_sess_off = profile["CUR_SESS_OFF"]
+    cur_sess_uname_off = profile["CUR_SESS_UNAME_OFF"]
+    vec_key_off = profile["VEC_KEY_OFF"]
+    vec_lookup_off = profile.get("VEC_LOOKUP_OFF")  # x86_64 only
 
-    # Build current-selection detection JS (only if offsets available)
-    current_sel_js = ""
-    if manager_vt_off is not None:
-        current_sel_js = f"""
-// --- Current selection detection ---
-var MANAGER_VT = b.add(0x{manager_vt_off:x});
-var CTRL_OFF = 0x{ctrl_off:x};
-var CUR_SESS_OFF = 0x{cur_sess_off:x};
-var CUR_SESS_UNAME_OFF = 0x{cur_sess_uname_off:x};
+    # Manager validation: check "normal_key" string at VEC_KEY_OFF.
+    # On x86_64 multiple managers share the same vtable; this picks the right one.
+    validate_js = f'var k = readStdString(hit.address.add(0x{vec_key_off:x})); if (k !== "normal_key") return;'
 
-function detectCurrentSelection() {{
-    try {{
-        // Heap scan for manager vtable pointer
-        var vtPattern = ptrToPattern(MANAGER_VT);
-        var found = null;
-        Process.enumerateRanges("rw-").forEach(function(range) {{
-            if (found || range.size > 200*1024*1024) return;
-            try {{
-                Memory.scanSync(range.base, range.size, vtPattern).forEach(function(hit) {{
-                    if (found) return;
-                    try {{
-                        var ctrl = hit.address.add(CTRL_OFF).readPointer();
-                        if (ctrl.isNull() || ctrl.compare(ptr(0x10000)) < 0) return;
-                        var curSess = ctrl.add(CUR_SESS_OFF).readPointer();
-                        if (curSess.isNull() || curSess.compare(ptr(0x10000)) < 0) return;
-                        var uname = readStdString(curSess.add(CUR_SESS_UNAME_OFF));
-                        if (uname && uname.length >= 2) {{
-                            found = uname;
-                        }}
-                    }} catch(e) {{}}
-                }});
-            }} catch(e) {{}}
-        }});
-        return found;
-    }} catch(e) {{
-        return null;
+    # Architecture-specific vector access
+    if vec_lookup_off is not None:
+        # x86_64: vector behind lookup function keyed by "normal_key"
+        vec_access_js = f"""
+    // x86_64: vector accessed via lookup function with key "normal_key"
+    var lookupFn = new NativeFunction(b.add(0x{vec_lookup_off:x}), "pointer", ["pointer", "pointer"]);
+    var keyPtr = manager.add(0x{vec_key_off:x});
+    var vecResult = lookupFn(ctrl, keyPtr);
+    if (!vecResult || vecResult.isNull()) {{
+        console.log("ERROR: lookup returned null");
+        console.log("SCRIPT_DONE");
     }}
-}}
-
-var curSel = detectCurrentSelection();
-if (curSel) {{
-    console.log("CURRENT_SEL " + curSel);
-}} else {{
-    console.log("CURRENT_SEL_NONE");
-}}
+    var vectorBegin = vecResult.readPointer();
+    var vectorEnd = vecResult.add(8).readPointer();
+"""
+    else:
+        # aarch64: vector directly at controller+0x0/0x8
+        vec_access_js = """
+    // aarch64: vector directly at controller+0x0/0x8
+    var vectorBegin = ctrl.add(0x0).readPointer();
+    var vectorEnd = ctrl.add(0x8).readPointer();
 """
 
     write_js("/tmp/_cs_enum.js", f"""
@@ -326,6 +316,10 @@ var w = Process.getModuleByName("wechat");
 var b = w.base;
 var UNAME_OFF = 0x{username_off:x};
 var ELEM_SZ = {elem_size};
+var MANAGER_VT = b.add(0x{manager_vt_off:x});
+var CTRL_OFF = 0x{ctrl_off:x};
+var CUR_SESS_OFF = 0x{cur_sess_off:x};
+var CUR_SESS_UNAME = 0x{cur_sess_uname_off:x};
 {READ_STD_STRING_JS}
 
 function ptrToPattern(p) {{
@@ -336,93 +330,63 @@ function ptrToPattern(p) {{
     return hex.join(" ");
 }}
 
-var fhPattern = "66 69 6c 65 68 65 6c 70 65 72 00";
-var sessionElements = [];
+// Step 1: Find manager via vtable scan
+var vtPattern = ptrToPattern(MANAGER_VT);
+var manager = null;
 
 Process.enumerateRanges("rw-").forEach(function(range) {{
-    if (range.size > 200*1024*1024) return;
+    if (manager || range.size > 200*1024*1024) return;
     try {{
-        Memory.scanSync(range.base, range.size, fhPattern).forEach(function(hit) {{
-            var cand = hit.address.sub(UNAME_OFF + 1);
+        Memory.scanSync(range.base, range.size, vtPattern).forEach(function(hit) {{
+            if (manager) return;
             try {{
-                var u = readStdString(cand.add(UNAME_OFF));
-                if (u === "filehelper") sessionElements.push(cand);
+                var ctrl = hit.address.add(CTRL_OFF).readPointer();
+                if (!ctrl.isNull() && ctrl.compare(ptr(0x10000)) >= 0) {{
+                    {validate_js}
+                    manager = hit.address;
+                }}
             }} catch(e) {{}}
         }});
     }} catch(e) {{}}
 }});
 
-if (sessionElements.length === 0) {{
-    console.log("ERROR: filehelper session element not found");
+if (!manager) {{
+    console.log("ERROR: manager not found via vtable scan");
     console.log("SCRIPT_DONE");
 }} else {{
-    var vectorBegin = null;
-    var vectorEnd = null;
+    console.log("MANAGER " + manager);
 
-    for (var sei = 0; sei < sessionElements.length && !vectorBegin; sei++) {{
-        var sessElem = sessionElements[sei];
-        var pattern = ptrToPattern(sessElem);
-
-        Process.enumerateRanges("rw-").forEach(function(range) {{
-            if (vectorBegin || range.size > 200*1024*1024) return;
-            try {{
-                Memory.scanSync(range.base, range.size, pattern).forEach(function(hit) {{
-                    if (vectorBegin) return;
-                    var elemAddr = hit.address;
-                    var validNeighbors = 0;
-                    for (var delta = -3; delta <= 3; delta++) {{
-                        if (delta === 0) continue;
-                        try {{
-                            var neighbor = elemAddr.add(delta * ELEM_SZ).readPointer();
-                            if (!neighbor.isNull() && neighbor.compare(ptr(0x10000)) >= 0) {{
-                                var nu = readStdString(neighbor.add(UNAME_OFF));
-                                if (nu && nu.length >= 2) validNeighbors++;
-                            }}
-                        }} catch(e) {{}}
-                    }}
-                    if (validNeighbors < 3) return;
-
-                    var start = elemAddr;
-                    for (var back = 1; back < 300; back++) {{
-                        var prev = elemAddr.sub(back * ELEM_SZ);
-                        try {{
-                            var pp = prev.readPointer();
-                            if (pp.isNull() || pp.compare(ptr(0x10000)) < 0) break;
-                            start = prev;
-                        }} catch(e) {{ break; }}
-                    }}
-                    var end = elemAddr.add(ELEM_SZ);
-                    for (var fwd = 1; fwd < 300; fwd++) {{
-                        var next = elemAddr.add(fwd * ELEM_SZ);
-                        try {{
-                            var np = next.readPointer();
-                            if (np.isNull() || np.compare(ptr(0x10000)) < 0) break;
-                            end = next.add(ELEM_SZ);
-                        }} catch(e) {{ break; }}
-                    }}
-                    var count = end.sub(start).toInt32() / ELEM_SZ;
-                    if (count > 10) {{
-                        vectorBegin = start;
-                        vectorEnd = end;
-                    }}
-                }});
-            }} catch(e) {{}}
-        }});
-    }}
-
-    if (!vectorBegin) {{
-        console.log("ERROR: session vector not found");
+    // Step 2: Get vector begin/end
+    var ctrl = manager.add(CTRL_OFF).readPointer();
+{vec_access_js}
+    if (vectorBegin.isNull() || vectorEnd.isNull() || vectorEnd.compare(vectorBegin) <= 0) {{
+        console.log("ERROR: invalid vector pointers begin=" + vectorBegin + " end=" + vectorEnd);
         console.log("SCRIPT_DONE");
     }} else {{
         var count = vectorEnd.sub(vectorBegin).toInt32() / ELEM_SZ;
         console.log("VECTOR " + vectorBegin + " count=" + count);
+
+        // Step 3: Enumerate sessions
         for (var i = 0; i < count; i++) {{
-            var ep = vectorBegin.add(i * ELEM_SZ).readPointer();
-            if (ep.isNull()) continue;
-            var u = readStdString(ep.add(UNAME_OFF));
-            if (u) console.log("SESSION " + i + " " + u);
+            try {{
+                var ep = vectorBegin.add(i * ELEM_SZ).readPointer();
+                if (ep.isNull() || ep.compare(ptr(0x10000)) < 0) continue;
+                var u = readStdString(ep.add(UNAME_OFF));
+                if (u) console.log("SESSION " + i + " " + u);
+            }} catch(e) {{}}
         }}
-{current_sel_js}
+
+        // Step 4: Read current selection
+        var curSelName = "NONE";
+        try {{
+            var curPtr = ctrl.add(CUR_SESS_OFF).readPointer();
+            if (!curPtr.isNull() && curPtr.compare(ptr(0x10000)) >= 0) {{
+                var s = readStdString(curPtr.add(CUR_SESS_UNAME));
+                if (s) curSelName = s;
+            }}
+        }} catch(e) {{}}
+        console.log("CURRENT_SEL " + curSelName);
+
         console.log("SCRIPT_DONE");
     }}
 }}
@@ -434,6 +398,9 @@ if (sessionElements.length === 0) {{
             time.sleep(2)
         log(f"[chat-select] Running Frida enumerate script (attempt {attempt})...")
         lines = run_frida_script(pid, "/tmp/_cs_enum.js", timeout=45)
+        # Log all Frida output for debugging
+        for line in lines:
+            log(f"[frida-enum] {line}")
         # Parse raw sessions from Frida output (raw vector index -> username)
         raw_sessions = []  # [(raw_index, username), ...] in vector order
         vector_base = None
@@ -445,8 +412,10 @@ if (sessionElements.length === 0) {{
                 parts = stripped.split()
                 vector_base = parts[1]
                 vector_count = int(parts[2].split("=")[1])
-            elif stripped.startswith("CURRENT_SEL ") and not stripped.startswith("CURRENT_SEL_NONE"):
-                current_sel = stripped.split(None, 1)[1]
+            elif stripped.startswith("CURRENT_SEL "):
+                sel = stripped.split(None, 1)[1]
+                if sel not in ("NONE",):
+                    current_sel = sel
             elif stripped.startswith("SESSION"):
                 parts = stripped.split(None, 2)
                 if len(parts) >= 3:
@@ -462,7 +431,7 @@ if (sessionElements.length === 0) {{
             # selectSession() uses indices that exclude official accounts
             sessions = {}
             filtered_idx = 0
-            for raw_idx, uname in raw_sessions:
+            for _, uname in raw_sessions:
                 if is_official_account(uname):
                     continue
                 sessions[uname] = filtered_idx

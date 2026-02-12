@@ -4,12 +4,15 @@
     "nodejs_22",
     "pnpm",
     "colima",
-    "direnv@latest"
+    "direnv@latest",
+    "rustup",
+    "cargo-watch"
   ],
   "shell": {
     "init_hook": [
-      "echo 'Welcome to devbox!' > /dev/null",
-      "export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock"
+      "export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock",
+      "if ! rustup show active-toolchain &>/dev/null; then rustup default stable &>/dev/null; fi",
+      "export PATH=\"$HOME/.cargo/bin:$PATH\""
     ],
     "scripts": {
       "colima:start": [

@@ -79,7 +79,6 @@ fi
 
 # ============================================
 # Start WeChat (background)
-# Pass all required environment variables explicitly
 # Disable Qt HiDPI scaling so AT-SPI coordinates match actual screen pixels
 # ============================================
 su -s /bin/bash -c "DISPLAY=$DISPLAY \
@@ -94,7 +93,7 @@ su -s /bin/bash -c "DISPLAY=$DISPLAY \
   /usr/bin/wechat &" wechat
 
 # ============================================
-# Initialize SQLite database if needed
+# Initialize data directory
 # ============================================
 DB_PATH="${AGENT_DB_PATH:-/data/agent.db}"
 if [ ! -f "$DB_PATH" ]; then
@@ -104,14 +103,21 @@ if [ ! -f "$DB_PATH" ]; then
 fi
 
 # ============================================
-# Start agent-server (foreground, main process)
+# Start agent-server (Rust binary, foreground)
 # ============================================
 echo "Starting agent-server on port ${AGENT_PORT:-6174}..."
-cd /opt/agent-server
 
-# Use --watch for auto-restart on file changes (dev mode)
-if [ "${DEV_MODE:-0}" = "1" ]; then
-  exec node --watch dist/index.js
-else
-  exec node dist/index.js
-fi
+# Run in a restart loop so `pkill agent-server` restarts it
+# (used by dev-deploy/dev-watch to hot-swap the binary)
+while true; do
+  /opt/agent-server/agent-server &
+  SERVER_PID=$!
+  wait $SERVER_PID
+  EXIT_CODE=$?
+  # Exit cleanly on SIGTERM (container shutdown)
+  if [ $EXIT_CODE -eq 143 ]; then
+    exit 0
+  fi
+  echo "agent-server exited ($EXIT_CODE), restarting in 1s..."
+  sleep 1
+done

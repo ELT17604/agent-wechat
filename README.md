@@ -5,7 +5,7 @@ WeChat automation via deterministic FSM. Runs WeChat in a Docker container with 
 ## Requirements
 
 - Docker (via Colima on macOS, or Docker Desktop)
-- Node.js >= 22
+- Node.js >= 22 (for CLI)
 - pnpm
 
 ## Quick Start
@@ -14,7 +14,7 @@ WeChat automation via deterministic FSM. Runs WeChat in a Docker container with 
 # Install dependencies
 pnpm install
 
-# Build TypeScript
+# Build CLI + shared types
 pnpm build
 
 # Build Docker image (choose your arch)
@@ -51,11 +51,13 @@ pnpm cli down
 | `pnpm cli auth login` | Login flow (shows QR code) |
 | `pnpm cli chats list` | List chats |
 | `pnpm cli find <name>` | Find chat by name |
-| `pnpm cli send <id> <msg>` | Send message to chat |
+| `pnpm cli messages list <id>` | List messages |
+| `pnpm cli messages send <id> --text <msg>` | Send message to chat |
+| `pnpm cli messages media <id> <localId>` | Download media attachment |
 
 ## Architecture
 
-- **Container**: WeChat + Xvfb + agent-server (Node.js)
+- **Container**: WeChat + Xvfb + agent-server (Rust/Axum)
 - **FSM Engine**: Deterministic state machine for UI automation
 - **CLI**: HTTP/WebSocket client that talks to agent-server
 
@@ -64,20 +66,15 @@ See [CLAUDE.md](./CLAUDE.md) for technical details.
 ## Development
 
 ```bash
-# Build all packages
+# Build CLI + shared types
 pnpm build
 
-# Start in dev mode (mounts local dist for hot reload)
-pnpm dev
+# Deploy Rust server changes to running container
+pnpm dev:deploy
 
-# In another terminal, watch for changes
-pnpm build:watch
-
-# Type check
-pnpm typecheck
+# Type check Rust code
+cd packages/agent-server-rust && cargo check
 ```
-
-Dev mode exposes port 9229 for Node.js debugging.
 
 ## Ports
 

@@ -716,7 +716,7 @@ async function cmdUp() {
     execSync(`docker image inspect ${image}`, { stdio: "ignore" });
   } catch {
     console.error(`Image ${image} not found.`);
-    console.error(`Run 'pnpm build:image:local' first to build the image.`);
+    console.error(`Run 'pnpm build:image' first to build the image.`);
     process.exit(1);
   }
 

@@ -1,5 +1,20 @@
 // ============================================
+// Generated types (from Rust via ts-rs)
+// Run `./scripts/generate-types.sh` to regenerate
+// ============================================
+
+export type { Chat } from "./generated/Chat.js";
+export type { Message } from "./generated/Message.js";
+export type { LoginSubscriptionEvent } from "./generated/LoginSubscriptionEvent.js";
+export type { SendParams } from "./generated/SendParams.js";
+export type { ImageData } from "./generated/ImageData.js";
+export type { FileData } from "./generated/FileData.js";
+export type { OpenChatResult } from "./generated/OpenChatResult.js";
+
+// ============================================
 // SESSIONS
+// Note: Session kept handwritten because Rust uses plain `string`
+// for status/loginState, while TS has richer union types.
 // ============================================
 
 export type SessionStatus =
@@ -71,30 +86,9 @@ export interface LoginResult {
   state: LoginState;
 }
 
-// Login subscription events (for real-time QR monitoring)
-export type LoginSubscriptionEvent =
-  | { type: "status"; message: string }           // Status update
-  | { type: "qr"; qrData: string; qrBinaryData?: number[]; qrDataUrl?: string }  // QR code
-  | { type: "phone_confirm"; message?: string }   // User needs to confirm on phone
-  | { type: "login_success"; userId?: string }    // Login confirmed
-  | { type: "login_timeout" }                     // QR expired
-  | { type: "error"; message: string };           // No QR found, etc.
-
 // ============================================
-// CHATS
+// CHATS (params only — Chat type is generated)
 // ============================================
-
-export interface Chat {
-  id: string;              // WeChat username (internal ID)
-  username: string;        // WeChat username (same as id, explicit)
-  name: string;            // Display name (remark > nick_name > username)
-  remark?: string;         // User-set contact remark
-  lastMessagePreview?: string;
-  lastMessageSender?: string;
-  lastActivityAt?: string;
-  unreadCount: number;
-  isGroup: boolean;
-}
 
 export interface ListChatsParams {
   limit?: number;
@@ -112,26 +106,9 @@ export interface OpenChatParams {
   chatId: string;
 }
 
-export interface OpenChatResult {
-  ok: boolean;
-  username?: string;
-  index?: number;
-  error?: string;
-}
-
 // ============================================
-// MESSAGES
+// MESSAGES (params only — Message type is generated)
 // ============================================
-
-export interface Message {
-  localId: number;
-  serverId: number;
-  chatId: string;             // WeChat username of the chat
-  sender?: string;            // Sender username (group chats)
-  type: number;               // WeChat message type (1=text, 34=voice, 47=emoji, 10000=system)
-  content: string;            // Message content (text or XML for media)
-  timestamp: string;          // ISO 8601
-}
 
 export interface ListMessagesParams {
   chatId: string;
@@ -139,19 +116,7 @@ export interface ListMessagesParams {
   offset?: number;
 }
 
-export interface SendParams {
-  chatId: string;
-  text?: string;
-  image?: {
-    data: string;       // base64-encoded
-    mimeType: string;   // "image/png", "image/jpeg", "image/gif"
-  };
-  file?: {
-    data: string;       // base64-encoded
-    filename: string;   // original filename (e.g. "doc.pdf")
-  };
-}
-
+// Note: SendResult kept handwritten (has messageId field not yet in Rust)
 export interface SendResult {
   success: boolean;
   messageId?: string;
@@ -163,6 +128,8 @@ export interface GetMediaParams {
   localId: number;
 }
 
+// Note: MediaResult kept handwritten (Rust uses plain string for type,
+// TS has richer string literal union)
 export interface MediaResult {
   type: "image" | "emoji" | "voice" | "unsupported";
   data?: string;      // base64 for image/voice

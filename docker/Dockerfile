@@ -1,3 +1,31 @@
+# ============================================
+# Stage 1: Build the Rust server binary
+# ============================================
+FROM rust:1.93-bookworm AS builder
+
+WORKDIR /build
+
+# Install build dependencies for bundled sqlcipher + openssl
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy manifests first for dependency caching
+COPY agent-server-rust/Cargo.toml agent-server-rust/Cargo.lock* ./
+# Create dummy src for dependency build
+RUN mkdir -p src && echo 'fn main() {}' > src/main.rs
+RUN cargo build --release 2>/dev/null || true
+# Remove dummy build artifacts
+RUN rm -rf src target/release/deps/agent_server*
+
+# Copy actual source and migrations, then build
+COPY agent-server-rust/src ./src
+COPY agent-server-rust/migrations ./migrations
+RUN cargo build --release
+
+# ============================================
+# Stage 2: Final runtime image
+# ============================================
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -28,11 +56,11 @@ RUN apt-get update && apt-get install -y \
     gstreamer1.0-pulseaudio gstreamer1.0-alsa \
     # Media conversion (WXGF→JPEG/GIF, SILK→MP3)
     ffmpeg \
-    # New packages for agent-server
+    # Clipboard (for paste-image tool)
     xclip \
-    sqlite3 \
-    # Build dependencies
-    libssl-dev \
+    # SQLCipher build deps (temp, for compiling sqlcipher CLI)
+    libssl-dev build-essential tcl \
+    # Python packages for tools
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -42,15 +70,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip3 install frida-tools silk-python
 
 # ============================================
-# Node.js 22 + pnpm + build tools (for native modules)
-# ============================================
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs python3 make g++ \
-    && npm install -g pnpm node-gyp \
-    && rm -rf /var/lib/apt/lists/*
-
-# ============================================
-# SQLCipher 4
+# SQLCipher 4 CLI (needed for wechat-db reads)
 # ============================================
 RUN cd /tmp \
     && curl -L https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.6.1.tar.gz | tar xz \
@@ -82,27 +102,9 @@ COPY tools/ /opt/tools/
 RUN chmod +x /opt/tools/*
 
 # ============================================
-# Shared package (dependency of agent-server)
+# Copy Rust binary from builder
 # ============================================
-WORKDIR /opt/shared
-COPY shared/dist ./dist
-COPY shared/package.json ./
-RUN pnpm install --prod
-
-# ============================================
-# Agent server
-# ============================================
-WORKDIR /opt/agent-server
-COPY agent-server/dist ./dist
-COPY agent-server/drizzle ./drizzle
-COPY agent-server/package.json ./
-# Install dependencies (skip native module builds initially)
-RUN pnpm install --prod --ignore-scripts
-
-# Rebuild native modules with global node-gyp (fixes Node.js v22 compatibility)
-ENV npm_config_node_gyp=/usr/lib/node_modules/node-gyp/bin/node-gyp.js
-RUN cd node_modules/better-sqlite3 && node-gyp rebuild --release
-RUN cd node_modules/usocket && node-gyp rebuild --release || true
+COPY --from=builder /build/target/release/agent-server /opt/agent-server/agent-server
 
 # ============================================
 # Data directory for SQLite

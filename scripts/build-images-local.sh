@@ -81,24 +81,21 @@ ensure_download() {
 prepare_build_context() {
   echo "==> Preparing build context"
 
-  # Build TypeScript packages first
-  echo "==> Building packages..."
-  pnpm build
+  # Copy Rust agent-server source to docker context
+  echo "==> Copying agent-server-rust to docker context"
+  rm -rf "$DOCKER_DIR/agent-server-rust"
+  mkdir -p "$DOCKER_DIR/agent-server-rust"
+  cp "$ROOT_DIR/packages/agent-server-rust/Cargo.toml" "$DOCKER_DIR/agent-server-rust/"
+  if [ -f "$ROOT_DIR/packages/agent-server-rust/Cargo.lock" ]; then
+    cp "$ROOT_DIR/packages/agent-server-rust/Cargo.lock" "$DOCKER_DIR/agent-server-rust/"
+  fi
+  cp -r "$ROOT_DIR/packages/agent-server-rust/src" "$DOCKER_DIR/agent-server-rust/"
+  cp -r "$ROOT_DIR/packages/agent-server-rust/migrations" "$DOCKER_DIR/agent-server-rust/"
+}
 
-  # Copy shared package to docker context
-  echo "==> Copying shared package to docker context"
-  mkdir -p "$DOCKER_DIR/shared"
-  cp -r "$ROOT_DIR/packages/shared/dist" "$DOCKER_DIR/shared/"
-  cp "$ROOT_DIR/packages/shared/package.json" "$DOCKER_DIR/shared/"
-
-  # Copy agent-server to docker context
-  echo "==> Copying agent-server to docker context"
-  mkdir -p "$DOCKER_DIR/agent-server"
-  cp -r "$ROOT_DIR/packages/agent-server/dist" "$DOCKER_DIR/agent-server/"
-
-  # Copy package.json and replace workspace: with file: protocol
-  sed 's|"workspace:\*"|"file:/opt/shared"|g' \
-    "$ROOT_DIR/packages/agent-server/package.json" > "$DOCKER_DIR/agent-server/package.json"
+cleanup_build_context() {
+  echo "==> Cleaning up build context"
+  rm -rf "$DOCKER_DIR/agent-server-rust"
 }
 
 build_arch() {
@@ -126,26 +123,41 @@ build_arch() {
     "$DOCKER_DIR"
 }
 
-# Prepare build context (build TS and copy files)
-prepare_build_context
-
+# Auto-detect architecture if not specified
 if [ -z "$ARCH_ONLY" ]; then
-  build_arch "amd64" "$AMD64_URL" "linux/amd64" "agent-wechat:amd64" "$CACHE_DIR/wechat.amd64.deb"
-  build_arch "arm64" "$ARM64_URL" "linux/arm64" "agent-wechat:arm64" "$CACHE_DIR/wechat.arm64.deb"
-  printf "\nDone. Built: agent-wechat:amd64, agent-wechat:arm64\n"
-else
-  case "$ARCH_ONLY" in
-    amd64)
-      build_arch "amd64" "$AMD64_URL" "linux/amd64" "agent-wechat:amd64" "$CACHE_DIR/wechat.amd64.deb"
-      printf "\nDone. Built: agent-wechat:amd64\n"
-      ;;
-    arm64)
-      build_arch "arm64" "$ARM64_URL" "linux/arm64" "agent-wechat:arm64" "$CACHE_DIR/wechat.arm64.deb"
-      printf "\nDone. Built: agent-wechat:arm64\n"
-      ;;
+  case "$(uname -m)" in
+    x86_64)          ARCH_ONLY="amd64" ;;
+    aarch64|arm64)   ARCH_ONLY="arm64" ;;
     *)
-      echo "unsupported arch: $ARCH_ONLY (use amd64 or arm64)" >&2
+      echo "Unknown host architecture: $(uname -m). Use --arch to specify." >&2
       exit 1
       ;;
   esac
+  echo "==> Auto-detected architecture: $ARCH_ONLY"
 fi
+
+# Prepare build context (copy Rust source)
+prepare_build_context
+
+# Ensure cleanup on exit
+trap cleanup_build_context EXIT
+
+case "$ARCH_ONLY" in
+  amd64)
+    build_arch "amd64" "$AMD64_URL" "linux/amd64" "agent-wechat:amd64" "$CACHE_DIR/wechat.amd64.deb"
+    printf "\nDone. Built: agent-wechat:amd64\n"
+    ;;
+  arm64)
+    build_arch "arm64" "$ARM64_URL" "linux/arm64" "agent-wechat:arm64" "$CACHE_DIR/wechat.arm64.deb"
+    printf "\nDone. Built: agent-wechat:arm64\n"
+    ;;
+  both)
+    build_arch "amd64" "$AMD64_URL" "linux/amd64" "agent-wechat:amd64" "$CACHE_DIR/wechat.amd64.deb"
+    build_arch "arm64" "$ARM64_URL" "linux/arm64" "agent-wechat:arm64" "$CACHE_DIR/wechat.arm64.deb"
+    printf "\nDone. Built: agent-wechat:amd64, agent-wechat:arm64\n"
+    ;;
+  *)
+    echo "unsupported arch: $ARCH_ONLY (use amd64, arm64, or both)" >&2
+    exit 1
+    ;;
+esac

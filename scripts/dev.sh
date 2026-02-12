@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Start the agent-wechat container in dev mode with hot reload
+# Start the agent-wechat container in dev mode.
 #
 # Usage: pnpm dev
 #
-# This mounts local dist folders into the container so changes
-# rebuild via 'pnpm build:watch' are reflected immediately.
+# Mounts tool scripts for live editing. The Rust binary is baked into
+# the image — use `pnpm dev:deploy` to hot-swap it without rebuilding.
 #
 
 set -e
@@ -13,7 +13,6 @@ set -e
 CONTAINER_NAME="agent-wechat"
 DEFAULT_PORT=6174
 VNC_PORT=5900
-DEBUG_PORT=9229
 
 # Determine architecture
 ARCH=$(uname -m)
@@ -28,9 +27,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Paths to mount
-AGENT_SERVER_DIST="$MONOREPO_ROOT/packages/agent-server/dist"
-AGENT_SERVER_DRIZZLE="$MONOREPO_ROOT/packages/agent-server/drizzle"
-SHARED_DIST="$MONOREPO_ROOT/packages/shared/dist"
 DOCKER_TOOLS="$MONOREPO_ROOT/docker/tools"
 
 # Stop any existing container
@@ -40,21 +36,12 @@ docker rm "$CONTAINER_NAME" 2>/dev/null || true
 # Check if image exists
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "Error: Image $IMAGE not found."
-  echo "Run 'pnpm build:image:local' first to build the image."
-  exit 1
-fi
-
-# Check if dist folders exist
-if [ ! -d "$AGENT_SERVER_DIST" ] || [ ! -d "$SHARED_DIST" ]; then
-  echo "Error: dist/ folders not found. Run 'pnpm build' first."
+  echo "Run 'pnpm build:image:arm64' (or amd64) first to build the image."
   exit 1
 fi
 
 echo "Starting $CONTAINER_NAME in dev mode..."
-echo "  Mounting: $AGENT_SERVER_DIST"
-echo "  Mounting: $AGENT_SERVER_DRIZZLE"
-echo "  Mounting: $SHARED_DIST"
-echo "  Mounting: $DOCKER_TOOLS"
+echo "  Mounting: $DOCKER_TOOLS → /opt/tools"
 
 docker run -d \
   --name "$CONTAINER_NAME" \
@@ -62,22 +49,15 @@ docker run -d \
   --cap-add=SYS_PTRACE \
   -p "$DEFAULT_PORT:$DEFAULT_PORT" \
   -p "$VNC_PORT:$VNC_PORT" \
-  -p "$DEBUG_PORT:$DEBUG_PORT" \
   -v "$CONTAINER_NAME-data:/data" \
   -v "$CONTAINER_NAME-wechat-home:/home/wechat" \
-  -v "$AGENT_SERVER_DIST:/opt/agent-server/dist" \
-  -v "$AGENT_SERVER_DRIZZLE:/opt/agent-server/drizzle" \
-  -v "$SHARED_DIST:/opt/shared/dist" \
   -v "$DOCKER_TOOLS:/opt/tools" \
-  -e "NODE_OPTIONS=--inspect=0.0.0.0:$DEBUG_PORT" \
-  -e "DEV_MODE=1" \
   "$IMAGE"
 
 echo ""
 echo "Dev container started!"
 echo "  API: http://localhost:$DEFAULT_PORT"
 echo "  VNC: localhost:$VNC_PORT"
-echo "  Debug: localhost:$DEBUG_PORT"
 echo ""
 echo "Waiting for server..."
 
@@ -85,9 +65,10 @@ for i in {1..30}; do
   if curl -s "http://localhost:$DEFAULT_PORT/health" >/dev/null 2>&1; then
     echo "Server is ready!"
     echo ""
-    echo "Dev mode active:"
-    echo "  - Run 'pnpm build:watch' for hot reload"
-    echo "  - Attach VS Code debugger to port $DEBUG_PORT"
+    echo "Dev workflow:"
+    echo "  - Edit Rust code, then run: pnpm dev:deploy"
+    echo "  - Tool scripts are live-mounted (edit docker/tools/ directly)"
+    echo "  - Type-check: cd packages/agent-server-rust && cargo watch -x check"
     exit 0
   fi
   sleep 1
@@ -95,5 +76,5 @@ for i in {1..30}; do
 done
 
 echo ""
-echo "Server did not become ready in time. Check logs with: pnpm cli logs"
+echo "Server did not become ready in time. Check logs with: docker logs $CONTAINER_NAME"
 exit 1

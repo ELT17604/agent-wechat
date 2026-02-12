@@ -208,18 +208,18 @@ def test_key(db_path, key):
 # Per-build constants: keyed by BuildID prefix (first 8 hex chars).
 
 BUILD_PROFILES = {
-    # WeChat Linux 4.x aarch64 (BuildID: 71996acd55aadbb8cb3011344035702609180cf1)
-    "71996acd": {
+    # WeChat Linux v4.1.0.16 aarch64 (BuildID: 5233a112...)
+    "5233a112": {
         "image_xor_mask": bytes.fromhex(
-            "5e780583f2236b8540bfebb8ab903062"
-            "fc5a071a767de41a637075835ebfac1e"
+            "33927e4d6cb29059a74057c9d988394f"
+            "c4ee2c476aae869415d3ed07f826a174"
         ),
     },
-    # WeChat Linux 4.x x86_64 (BuildID: 20420b6d58ea31c6d8a9f3f241fc95773dd032f5)
-    "20420b6d": {
+    # WeChat Linux v4.1.0.16 x86_64 (BuildID: f8713825...)
+    "f8713825": {
         "image_xor_mask": bytes.fromhex(
-            "5155035200510d06040d0c5154010655"
-            "5602505354035e500656000c04005e53"
+            "60431bbab72c0b5b868c98f9570bbb1d"
+            "41ec867286d3b4af910b6c5bb8c9ee49"
         ),
     },
 }

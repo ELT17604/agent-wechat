@@ -42,7 +42,7 @@ pub async fn list_messages(
 
     let db = get_db();
     let keys = get_stored_keys(&db, &session.id, &logged_in_user);
-    if !keys.contains_key("message_0.db") {
+    if !keys.keys().any(|k| k.starts_with("message_") && k.ends_with(".db") && !k.contains("fts") && !k.contains("resource")) {
         return Json(Vec::new());
     }
 

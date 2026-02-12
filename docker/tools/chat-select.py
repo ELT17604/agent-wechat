@@ -26,28 +26,30 @@ import shutil
 # Keyed by first 8 hex chars of ELF BuildID (same pattern as extract-keys.py).
 
 BUILD_PROFILES = {
-    # WeChat Linux 4.x aarch64 (BuildID: 71996acd...)
-    "71996acd": {
-        "SELECT_SESSION": 0x38bce80,
+    # WeChat Linux v4.1.0.16 aarch64 (BuildID: 5233a112...)
+    "5233a112": {
+        "ARCH": "aarch64",
+        "SELECT_SESSION": 0x38bd3d0,
         "USERNAME_OFF": 0x120,
         "ELEM_SIZE": 16,
-        "MANAGER_VT_OFF": 0x7b39db8,
-        "CTRL_OFF": 0xe8,
+        "MANAGER_VT_OFF": 0x7b3be28,
+        "CTRL_OFF": 0xd8,
         "CUR_SESS_OFF": 0x40,
         "CUR_SESS_UNAME_OFF": 0x120,
-        "VEC_KEY_OFF": 0x168,
+        "VEC_KEY_OFF": 0x158,
     },
-    # WeChat Linux 4.x x86_64 (BuildID: 20420b6d...)
-    "20420b6d": {
-        "SELECT_SESSION": 0x3907960,
+    # WeChat Linux v4.1.0.16 x86_64 (BuildID: f8713825...)
+    "f8713825": {
+        "ARCH": "x86_64",
+        "SELECT_SESSION": 0x3909e50,
         "USERNAME_OFF": 0x138,
         "ELEM_SIZE": 16,
-        "MANAGER_VT_OFF": 0x7fc2f50,
+        "MANAGER_VT_OFF": 0x7fc7f50,
         "CTRL_OFF": 0x180,
         "CUR_SESS_OFF": 0x40,
         "CUR_SESS_UNAME_OFF": 0x98,
         "VEC_KEY_OFF": 0x168,
-        "VEC_LOOKUP_OFF": 0x3929ce0,
+        "VEC_LOOKUP_OFF": 0x392c1d0,
     },
 }
 
@@ -448,6 +450,8 @@ def select_by_index(pid, profile, target_index, click_coords, vector_base, vecto
     select_session = profile["SELECT_SESSION"]
     username_off = profile["USERNAME_OFF"]
     elem_size = profile["ELEM_SIZE"]
+    # Register that holds the index argument: x1 on aarch64, rsi on x86_64
+    reg = "x1" if profile.get("ARCH") == "aarch64" else "rsi"
 
     log(f"[chat-select] Hooking selectSession, target_index={target_index}")
 
@@ -502,6 +506,7 @@ Interceptor.attach(addr, {{
         if (count >= 2) return;
         console.log("REDIRECT " + orig + " -> " + TARGET + " (" + readFilteredUsername(TARGET) + ")");
         args[1] = ptr(TARGET);
+        this.context.{reg} = TARGET;
         count++;
     }}
 }});

@@ -13,7 +13,7 @@
     "build:image:amd64": "bash scripts/build-images-local.sh --arch amd64",
     "build:image:all": "bash scripts/build-images-local.sh --arch both",
     "cli": "node packages/cli/dist/cli.js",
-    "db": "docker exec -it agent-wechat sqlite3 -header -column /data/agent.db",
+    "db": "docker cp agent-wechat:/data/agent.db /tmp/agent.db && docker cp agent-wechat:/data/agent.db-wal /tmp/agent.db-wal 2>/dev/null; docker cp agent-wechat:/data/agent.db-shm /tmp/agent.db-shm 2>/dev/null; sqlite3 -header -column /tmp/agent.db",
     "dev": "bash scripts/dev.sh",
     "dev:watch": "bash scripts/dev-watch.sh",
     "dev:deploy": "bash scripts/dev-deploy.sh",

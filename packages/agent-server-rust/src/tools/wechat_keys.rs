@@ -139,6 +139,10 @@ pub fn verify_key(db_path: &str, hex_key: &str) -> bool {
 }
 
 /// Check if credential setup is needed.
+///
+/// 1. Check that all required DB keys exist in stored_keys
+/// 2. Scan disk for additional required DBs (message_N, media_N) without keys
+/// 3. Spot-check one key for validity
 pub fn needs_key_extraction(
     conn: &Connection,
     session_id: &str,
@@ -160,40 +164,60 @@ pub fn needs_key_extraction(
     ];
     let required_prefixes: &[&str] = &["message_", "media_"];
 
-    let is_required = |name: &str| -> bool {
-        required_exact.contains(&name)
-            || required_prefixes.iter().any(|p| name.starts_with(p))
-    };
-
-    let existing_dbs = list_account_dbs(account_dir);
-    let missing: Vec<_> = existing_dbs
+    // Check required exact keys are present (regardless of disk scan)
+    let missing_required: Vec<&str> = required_exact
         .iter()
-        .filter(|name| is_required(name) && !stored_keys.contains_key(name.as_str()))
+        .filter(|name| !stored_keys.contains_key(**name))
+        .copied()
         .collect();
 
-    if !missing.is_empty() {
+    if !missing_required.is_empty() {
         tracing::info!(
-            "[wechat-keys] Missing keys for: {}",
-            missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            "[wechat-keys] Missing required keys: {}",
+            missing_required.join(", ")
+        );
+        return true;
+    }
+
+    // Scan disk for sharded DBs (message_N.db, media_N.db) missing keys
+    let existing_dbs = list_account_dbs(account_dir);
+    tracing::debug!(
+        "[wechat-keys] Disk scan: {} files for account {}",
+        existing_dbs.len(),
+        account_dir
+    );
+
+    let missing_on_disk: Vec<_> = existing_dbs
+        .iter()
+        .filter(|name| {
+            required_prefixes.iter().any(|p| name.starts_with(p))
+                && !stored_keys.contains_key(name.as_str())
+        })
+        .collect();
+
+    if !missing_on_disk.is_empty() {
+        tracing::info!(
+            "[wechat-keys] Missing keys for on-disk DBs: {}",
+            missing_on_disk.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
         );
         return true;
     }
 
     // Spot-check one key
-    let check_db = if stored_keys.contains_key("session.db") {
-        "session.db"
-    } else {
-        stored_keys.keys().next().map(|s| s.as_str()).unwrap_or("")
-    };
-
+    let check_db = "session.db";
     if let Some(check_key) = stored_keys.get(check_db) {
         let check_path = get_db_path(account_dir, check_db);
         if !verify_key(&check_path, check_key) {
-            tracing::info!("[wechat-keys] Spot-check failed, re-extraction needed");
+            tracing::info!("[wechat-keys] Spot-check failed for {check_db}, re-extraction needed");
             return true;
         }
     }
 
+    let db_key_count = stored_keys.keys().filter(|k| !k.starts_with('_')).count();
+    tracing::info!(
+        "[wechat-keys] {db_key_count} DB keys stored, spot-check passed, image_aes={}",
+        stored_keys.contains_key("_image_aes")
+    );
     false
 }
 

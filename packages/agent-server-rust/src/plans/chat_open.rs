@@ -1,6 +1,6 @@
 use super::Plan;
 use crate::ia::actions;
-use crate::ia::selectors::query_selector;
+use crate::ia::selectors::{query_selector, query_selector_all};
 use crate::ia::types::*;
 use crate::tools::chat_select::{open_chat, OpenChatResult};
 
@@ -19,6 +19,7 @@ pub struct ChatOpenPlanState {
 pub enum ChatOpenPhase {
     Opening,
     Focusing,
+    ClickingAudio,
     Done,
 }
 
@@ -123,6 +124,7 @@ impl Plan for ChatOpenPlan {
 
                     if params.clear_unreads {
                         plan_state.phase = ChatOpenPhase::Focusing;
+                        tracing::info!("[chat_open] Opening → Focusing, skipped={}", skipped);
                         if !skipped {
                             return Some(SelectedAction {
                                 action: actions::wait_short(),
@@ -134,6 +136,7 @@ impl Plan for ChatOpenPlan {
 
                     // No clear_unreads — done
                     plan_state.phase = ChatOpenPhase::Done;
+                    tracing::info!("[chat_open] Opening → Done (no clear_unreads)");
                     return Some(SelectedAction {
                         action: actions::wait_short(),
                         metadata: None,
@@ -142,15 +145,20 @@ impl Plan for ChatOpenPlan {
 
                 ChatOpenPhase::Focusing => {
                     if main_state_id != Some("chat_open") {
+                        tracing::info!("[chat_open] Focusing: wrong state {:?}", main_state_id);
                         return None;
                     }
 
                     let edit_node = match find_edit_area(a11y) {
                         Some(n) => n,
-                        None => return None,
+                        None => {
+                            tracing::info!("[chat_open] Focusing: edit area not found");
+                            return None;
+                        }
                     };
 
-                    plan_state.phase = ChatOpenPhase::Done;
+                    plan_state.phase = ChatOpenPhase::ClickingAudio;
+                    tracing::info!("[chat_open] Focusing → ClickingAudio, edit_bounds={:?}", edit_node.bounds);
 
                     if let Some(bounds) = &edit_node.bounds {
                         return Some(SelectedAction {
@@ -158,7 +166,45 @@ impl Plan for ChatOpenPlan {
                             metadata: None,
                         });
                     }
-                    return None;
+                    continue;
+                }
+
+                ChatOpenPhase::ClickingAudio => {
+                    if main_state_id != Some("chat_open") {
+                        tracing::info!("[chat_open] ClickingAudio: wrong state {:?}", main_state_id);
+                        return None;
+                    }
+
+                    let unplayed = query_selector_all(
+                        a11y,
+                        r#"list[name="Messages"] > list-item[name=/^Audio.*Unplay/s]"#,
+                    );
+
+                    // Build a sequence: click each unplayed audio with a wait between
+                    let mut seq: Vec<Action> = Vec::new();
+                    for node in &unplayed {
+                        if let Some(bounds) = &node.bounds {
+                            let x = (bounds.x + 100.0).round();
+                            let y = (bounds.y + bounds.height / 2.0).round();
+                            seq.push(actions::click_at(x, y));
+                            seq.push(Action::Wait { ms: 500 });
+                        }
+                    }
+                    tracing::info!("[chat_open] ClickingAudio: found {} unplayed, sequence of {} actions", unplayed.len(), seq.len());
+
+                    plan_state.phase = ChatOpenPhase::Done;
+
+                    if seq.is_empty() {
+                        return Some(SelectedAction {
+                            action: actions::wait_short(),
+                            metadata: None,
+                        });
+                    }
+
+                    return Some(SelectedAction {
+                        action: Action::Sequence { actions: seq },
+                        metadata: None,
+                    });
                 }
 
                 ChatOpenPhase::Done => return None,

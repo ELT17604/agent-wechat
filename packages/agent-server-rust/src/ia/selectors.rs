@@ -169,11 +169,10 @@ fn parse_node(token: &str) -> SelectorNode {
 
         let value = if let Some(regex_body) = cap.get(6) {
             let flags = cap.get(7).map(|m| m.as_str()).unwrap_or("");
-            let pattern = if flags.contains('i') {
-                format!("(?i){}", regex_body.as_str())
-            } else {
-                regex_body.as_str().to_string()
-            };
+            let mut prefix = String::new();
+            if flags.contains('i') { prefix.push_str("(?i)"); }
+            if flags.contains('s') { prefix.push_str("(?s)"); }
+            let pattern = format!("{}{}", prefix, regex_body.as_str());
             AttrValue::Regex(Regex::new(&pattern).unwrap_or_else(|_| Regex::new("$^").unwrap()))
         } else {
             let s = cap
@@ -350,28 +349,14 @@ fn match_ast_for_result<'a>(
             if is_last {
                 return Some(node);
             }
-            // Continue matching children
-            if let Some(children) = &node.children {
-                for child in children {
-                    if let Some(result) = match_ast_for_result(child, ast, node_index + 1) {
-                        return Some(result);
-                    }
-                }
+            // Stay on this node so the next combinator resolves correctly
+            if let Some(result) = match_ast_for_result(node, ast, node_index + 1) {
+                return Some(result);
             }
         }
         // Recurse into children
         if let Some(children) = &node.children {
-            for (i, child) in children.iter().enumerate() {
-                // Check if child matches with sibling index for nth-child
-                if matches_node(child, target, Some(i)) {
-                    if is_last {
-                        return Some(child);
-                    }
-                    if let Some(result) = match_ast_for_result(child, ast, node_index + 1) {
-                        return Some(result);
-                    }
-                }
-                // Continue searching descendants
+            for child in children {
                 if let Some(result) = match_ast_for_result(child, ast, node_index) {
                     return Some(result);
                 }
@@ -432,10 +417,9 @@ fn collect_matches<'a>(
         if matches_node(node, target, None) {
             if is_last {
                 results.push(node);
-            } else if let Some(children) = &node.children {
-                for child in children {
-                    collect_matches(child, ast, start_index + 1, results);
-                }
+            } else {
+                // Stay on this node so the next combinator resolves correctly
+                collect_matches(node, ast, start_index + 1, results);
             }
         }
         if let Some(children) = &node.children {
@@ -453,5 +437,121 @@ fn collect_matches<'a>(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ia::types::A11yNode;
+
+    fn node(role: &str, name: &str, children: Option<Vec<A11yNode>>) -> A11yNode {
+        A11yNode {
+            role: role.into(),
+            name: name.into(),
+            bounds: None,
+            children,
+            parent_index: None,
+            window: None,
+            states: None,
+        }
+    }
+
+    fn messages_tree() -> A11yNode {
+        node("desktop-frame", "main", Some(vec![
+            node("list", "Messages", Some(vec![
+                node("list-item", "08:35", None),
+                node("list-item", "Audio2\u{201d}sec\n", None),
+                node("list-item", "Audio2\u{201d}secUnplay\n", None),
+            ])),
+        ]))
+    }
+
+    #[test]
+    fn test_audio_unplay_selector_with_s_flag() {
+        let tree = messages_tree();
+        let results = query_selector_all(
+            &tree,
+            r#"list[name="Messages"] > list-item[name=/^Audio.*Unplay/s]"#,
+        );
+        assert_eq!(results.len(), 1, "should find 1 unplayed audio item");
+        assert!(results[0].name.contains("Unplay"));
+    }
+
+    #[test]
+    fn test_dot_does_not_match_newline_without_s_flag() {
+        let tree = node("root", "", Some(vec![
+            node("item", "Hello\nWorld", None),
+        ]));
+        // Without s flag, . doesn't match \n
+        let results = query_selector_all(&tree, r#"item[name=/Hello.*World/]"#);
+        assert_eq!(results.len(), 0);
+        // With s flag, it does
+        let results = query_selector_all(&tree, r#"item[name=/Hello.*World/s]"#);
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_audio_unplay_with_plain_quote() {
+        // Test with ASCII double quote instead of unicode right quote
+        let tree = node("desktop-frame", "main", Some(vec![
+            node("list", "Messages", Some(vec![
+                node("list-item", "Audio2\"secUnplay\n", None),
+            ])),
+        ]));
+        let results = query_selector_all(
+            &tree,
+            r#"list[name="Messages"] > list-item[name=/^Audio.*Unplay/s]"#,
+        );
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_regex_case_insensitive_flag() {
+        let tree = node("root", "", Some(vec![
+            node("button", "Submit", None),
+            node("button", "cancel", None),
+        ]));
+        let results = query_selector_all(&tree, r#"button[name=/submit/i]"#);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "Submit");
+    }
+
+    #[test]
+    fn test_child_combinator_query_selector() {
+        let tree = messages_tree();
+        let result = query_selector(
+            &tree,
+            r#"list[name="Messages"] > list-item"#,
+        );
+        assert!(result.is_some(), "should find first list-item child");
+        assert_eq!(result.unwrap().name, "08:35");
+    }
+
+    #[test]
+    fn test_child_combinator_query_selector_all() {
+        let tree = messages_tree();
+        let results = query_selector_all(
+            &tree,
+            r#"list[name="Messages"] > list-item"#,
+        );
+        assert_eq!(results.len(), 3, "should find all 3 list-item children");
+    }
+
+    #[test]
+    fn test_descendant_combinator() {
+        let tree = messages_tree();
+        // Descendant (space) should find list-items anywhere under root
+        let results = query_selector_all(&tree, r#"list-item"#);
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_regex_combined_flags() {
+        let tree = node("root", "", Some(vec![
+            node("item", "Hello\nWorld", None),
+        ]));
+        let results = query_selector_all(&tree, r#"item[name=/hello.*world/is]"#);
+        assert_eq!(results.len(), 1);
     }
 }

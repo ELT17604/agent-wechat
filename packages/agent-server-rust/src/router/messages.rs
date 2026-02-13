@@ -10,7 +10,8 @@ use crate::db::get_db;
 use crate::execution::run_execution_loop;
 use crate::ia::types::{MediaResult, Message, SendResult, SubscriptionEvent};
 use crate::plans::send_message::{SendMessageParams, SendMessagePlan};
-use crate::tools::wechat_keys::{get_stored_keys, get_image_keys};
+use crate::tools::wechat_db::{find_wechat_pid, list_account_dbs};
+use crate::tools::wechat_keys::{extract_keys_async, get_stored_keys, get_image_keys, store_keys};
 use crate::tools::wechat_media::get_message_media;
 use crate::tools::wechat_messages;
 use crate::sessions::manager::get_session;
@@ -81,9 +82,31 @@ pub async fn get_media(Path((chat_id, local_id)): Path<(String, i64)>) -> Json<M
         }
     };
 
-    let db = get_db();
-    let keys = get_stored_keys(&db, &session.id, &logged_in_user);
-    let image_keys = get_image_keys(&db, &session.id, &logged_in_user);
+    let mut keys = {
+        let db = get_db();
+        get_stored_keys(&db, &session.id, &logged_in_user)
+    };
+
+    // Lazy key extraction: if media_*.db files exist on disk without stored keys, extract them
+    let on_disk = list_account_dbs(&logged_in_user);
+    let has_missing_media = on_disk.iter().any(|name| {
+        name.starts_with("media_") && name.ends_with(".db") && !keys.contains_key(name.as_str())
+    });
+    if has_missing_media {
+        if let Some(pid) = find_wechat_pid() {
+            let extracted = extract_keys_async(pid).await;
+            if !extracted.is_empty() {
+                let db = get_db();
+                store_keys(&db, &session.id, &logged_in_user, &extracted);
+                keys = get_stored_keys(&db, &session.id, &logged_in_user);
+            }
+        }
+    }
+
+    let image_keys = {
+        let db = get_db();
+        get_image_keys(&db, &session.id, &logged_in_user)
+    };
 
     Json(get_message_media(
         &logged_in_user,

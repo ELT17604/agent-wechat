@@ -276,7 +276,6 @@ async function processUnreadChat(
             png: "image/png",
             gif: "image/gif",
             mp3: "audio/mpeg",
-            silk: "audio/silk",
           };
           mediaMime = mimeMap[result.format] ?? `application/${result.format}`;
           // Save media to temp file via runtime
@@ -297,7 +296,16 @@ async function processUnreadChat(
     }
 
     const timestamp = new Date(msg.timestamp).getTime();
-    const rawBody = msg.content || "";
+    // Use placeholder for media-only messages (voice, image without caption)
+    // so OpenClaw's media understanding pipeline knows to process the attachment
+    let rawBody = msg.content || "";
+    if (!rawBody && mediaPath && mediaMime) {
+      if (mediaMime.startsWith("audio/")) {
+        rawBody = "<media:audio>";
+      } else if (mediaMime.startsWith("image/")) {
+        rawBody = "<media:image>";
+      }
+    }
 
     log?.info?.(`[wechat:${liveAccount.accountId}] Dispatching msg ${msg.localId}: body="${rawBody.slice(0, 80)}"${mediaPath ? ` media=${mediaPath}` : ""}`);
 
@@ -357,7 +365,7 @@ async function processUnreadChat(
         MessageSid: `wechat:${chatId}:${msg.localId}`,
         OriginatingChannel: "wechat",
         OriginatingTo: `wechat:${chatId}`,
-        ...(mediaPath ? { MediaPath: mediaPath, MediaType: mediaMime } : {}),
+        ...(mediaPath ? { MediaPath: mediaPath, MediaUrl: mediaPath, MediaType: mediaMime } : {}),
       });
 
       // Record session

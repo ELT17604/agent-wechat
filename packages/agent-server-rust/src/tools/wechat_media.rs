@@ -665,7 +665,13 @@ pub fn get_message_media(
     let (local_type, create_time, content) =
         match lookup_message_raw(account_dir, keys, chat_id, local_id) {
             Some(t) => t,
-            None => return unsupported(),
+            None => {
+                tracing::warn!(
+                    "[media] lookup_message_raw returned None for chat_id={}, local_id={}",
+                    chat_id, local_id
+                );
+                return unsupported();
+            }
         };
 
     let base = local_type & 0x7FFFFFFF;

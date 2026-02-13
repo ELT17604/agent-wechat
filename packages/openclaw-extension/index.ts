@@ -4,7 +4,7 @@ import { wechatPlugin } from "./src/channel.js";
 import { setWeChatRuntime } from "./src/runtime.js";
 
 const plugin = {
-  id: "openclaw-wechat",
+  id: "wechat",
   name: "WeChat",
   description: "WeChat channel via agent-wechat container",
   configSchema: emptyPluginConfigSchema(),

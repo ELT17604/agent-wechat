@@ -81,16 +81,7 @@ pnpm deploy:openclaw   # rebuilds + copies
 
 ## Docker Setup
 
-In Docker, mount the built extension and shared package as siblings so the `file:../shared` dependency resolves:
-
-```bash
-docker run \
-  -v /host/agent-wechat/packages/openclaw-extension:/app/extensions/wechat \
-  -v /host/agent-wechat/packages/shared:/app/extensions/shared \
-  openclaw-image
-```
-
-Alternatively, since the extension is bundled into a single `dist/index.js` with no runtime dependency on the shared package, you can mount just the three required files:
+The extension is bundled into a single `dist/index.js` with no runtime dependency on the shared package. Mount just the three required files:
 
 ```bash
 mkdir -p /host/openclaw-ext/wechat/dist

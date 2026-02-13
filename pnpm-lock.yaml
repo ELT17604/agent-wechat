@@ -46,7 +46,7 @@ importers:
   packages/openclaw-extension:
     dependencies:
       '@thisnick/agent-wechat-shared':
-        specifier: file:../shared
+        specifier: workspace:*
         version: link:../shared
     devDependencies:
       esbuild:

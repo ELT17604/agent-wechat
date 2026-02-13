@@ -6,7 +6,7 @@
     "build": "esbuild index.ts --bundle --format=esm --platform=node --outfile=dist/index.js --external:openclaw"
   },
   "dependencies": {
-    "@thisnick/agent-wechat-shared": "file:../shared"
+    "@thisnick/agent-wechat-shared": "workspace:*"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

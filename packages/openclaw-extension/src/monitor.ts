@@ -1,7 +1,9 @@
 import { WeChatClient } from "@thisnick/agent-wechat-shared";
 import type { Chat, Message } from "@thisnick/agent-wechat-shared";
+import { createReplyPrefixOptions } from "openclaw/plugin-sdk";
 import type { ResolvedWeChatAccount } from "./types.js";
 import { getWeChatRuntime } from "./runtime.js";
+import { resolveWeChatAccount } from "./types.js";
 
 // Message types that may have downloadable media
 const MEDIA_TYPES = new Set([3, 34]); // image, voice
@@ -45,6 +47,9 @@ export async function startWeChatMonitor(
 
   while (!abortSignal.aborted) {
     try {
+      // Reload config each iteration so hot-reloads take effect
+      const cfg = getWeChatRuntime().config.loadConfig();
+
       // ---- Auth polling (every authPollIntervalMs) ----
       const now = Date.now();
       if (now - lastAuthCheck >= account.authPollIntervalMs) {
@@ -101,8 +106,7 @@ export async function startWeChatMonitor(
             chat,
             lastSeenId,
             account,
-            runtime,
-            opts.cfg,
+            cfg,
             log,
           );
         }
@@ -128,13 +132,13 @@ async function processUnreadChat(
   chat: Chat,
   lastSeenId: Map<string, number>,
   account: ResolvedWeChatAccount,
-  runtime: any,
   cfg: any,
   log?: { info?: (...args: any[]) => void; error?: (...args: any[]) => void },
 ): Promise<void> {
+  const core = getWeChatRuntime();
   const chatId = chat.username ?? chat.id;
 
-  // Open the chat (triggers media downloads + future clear-unreads)
+  // Open the chat (triggers media downloads + clear unreads)
   try {
     await client.openChat(chatId, true);
   } catch (err) {
@@ -144,6 +148,7 @@ async function processUnreadChat(
   }
 
   // Determine how many messages to fetch
+  const firstPoll = !lastSeenId.has(chatId);
   const prevLastSeen = lastSeenId.get(chatId) ?? 0;
   const fetchLimit = Math.max(chat.unreadCount, 20);
 
@@ -157,30 +162,44 @@ async function processUnreadChat(
     return;
   }
 
-  // Filter to new messages (localId > lastSeenId)
-  const newMessages = messages.filter((m) => m.localId > prevLastSeen);
-  if (newMessages.length === 0) {
-    // Update lastSeenId even if no new messages (to advance past current)
-    if (messages.length > 0) {
+  if (messages.length === 0) return;
+
+  // On first poll, only process the last `unreadCount` messages
+  // and seed lastSeenId from the rest
+  let newMessages: Message[];
+  if (firstPoll) {
+    messages.sort((a, b) => a.localId - b.localId);
+    const unread = chat.unreadCount ?? 0;
+    if (unread > 0 && unread < messages.length) {
+      newMessages = messages.slice(-unread);
+      const seenMax = messages[messages.length - unread - 1].localId;
+      lastSeenId.set(chatId, seenMax);
+    } else if (unread >= messages.length) {
+      // All fetched messages are unread
+      newMessages = messages;
+    } else {
+      // No unreads — just seed lastSeenId, don't process anything
+      const maxId = messages[messages.length - 1].localId;
+      lastSeenId.set(chatId, maxId);
+      return;
+    }
+  } else {
+    newMessages = messages.filter((m) => m.localId > prevLastSeen);
+    if (newMessages.length === 0) {
       const maxId = Math.max(...messages.map((m) => m.localId));
       lastSeenId.set(chatId, maxId);
+      return;
     }
-    return;
+    newMessages.sort((a, b) => a.localId - b.localId);
   }
-
-  // Sort oldest-first for processing
-  newMessages.sort((a, b) => a.localId - b.localId);
 
   // Wait for media to settle
   await sleep(500);
 
   for (const msg of newMessages) {
     // Attempt media download for supported types
-    let media: {
-      base64: string;
-      mimeType: string;
-      filename: string;
-    } | undefined;
+    let mediaPath: string | undefined;
+    let mediaMime: string | undefined;
 
     const baseType = msg.type & 0x7fffffff;
     if (MEDIA_TYPES.has(baseType)) {
@@ -195,49 +214,139 @@ async function processUnreadChat(
             mp3: "audio/mpeg",
             silk: "audio/silk",
           };
-          media = {
-            base64: result.data,
-            mimeType: mimeMap[result.format] ?? `application/${result.format}`,
+          mediaMime = mimeMap[result.format] ?? `application/${result.format}`;
+          // Save media to temp file via runtime
+          const buf = Buffer.from(result.data, "base64");
+          const saved = await core.channel.media.saveMediaBuffer({
+            buffer: buf,
+            mimeType: mediaMime,
             filename: result.filename,
-          };
+          });
+          mediaPath = saved?.path;
         }
       } catch {
         // Media download failed — continue without attachment
       }
     }
 
-    // Build inbound message and dispatch via runtime
     const isGroup = chatId.includes("@chatroom");
     const senderId = msg.sender ?? chatId;
+    const senderName = msg.sender ?? chat.name;
     const timestamp = new Date(msg.timestamp).getTime();
+    const rawBody = msg.content || "";
 
     try {
-      await runtime.channel.reply.handleInbound({
+      // Resolve routing
+      const route = core.channel.routing.resolveAgentRoute({
+        cfg,
         channel: "wechat",
         accountId: account.accountId,
-        messageId: `wechat:${chatId}:${msg.localId}`,
-        target: chatId,
-        senderId,
-        senderName: msg.sender,
-        text: msg.content,
+        peer: {
+          kind: isGroup ? "group" : "direct",
+          id: isGroup ? chatId : senderId,
+        },
+      });
+
+      const fromLabel = isGroup
+        ? `group:${chat.name || chatId}`
+        : senderName || `user:${senderId}`;
+      const storePath = core.channel.session.resolveStorePath(
+        cfg.session?.store,
+        { agentId: route.agentId },
+      );
+
+      // Format envelope
+      const envelopeOptions =
+        core.channel.reply.resolveEnvelopeFormatOptions(cfg);
+      const previousTimestamp =
+        core.channel.session.readSessionUpdatedAt({
+          storePath,
+          sessionKey: route.sessionKey,
+        });
+      const body = core.channel.reply.formatAgentEnvelope({
+        channel: "WeChat",
+        from: fromLabel,
         timestamp,
-        isGroup,
-        isMentioned: msg.isMentioned ?? false,
-        media: media
-          ? {
-              data: Buffer.from(media.base64, "base64"),
-              mimeType: media.mimeType,
-              filename: media.filename,
-            }
-          : undefined,
-        replyTo: msg.reply
-          ? { senderId: msg.reply.sender, text: msg.reply.content }
-          : undefined,
+        previousTimestamp,
+        envelope: envelopeOptions,
+        body: rawBody,
+      });
+
+      // Build inbound context
+      const ctxPayload = core.channel.reply.finalizeInboundContext({
+        Body: body,
+        BodyForAgent: rawBody,
+        RawBody: rawBody,
+        CommandBody: rawBody,
+        From: isGroup ? `wechat:group:${chatId}` : `wechat:${senderId}`,
+        To: `wechat:${chatId}`,
+        SessionKey: route.sessionKey,
+        AccountId: route.accountId,
+        ChatType: isGroup ? "group" : "direct",
+        ConversationLabel: fromLabel,
+        SenderName: senderName || undefined,
+        SenderId: senderId,
+        Provider: "wechat",
+        Surface: "wechat",
+        MessageSid: `wechat:${chatId}:${msg.localId}`,
+        OriginatingChannel: "wechat",
+        OriginatingTo: `wechat:${chatId}`,
+        ...(mediaPath ? { MediaPath: mediaPath, MediaType: mediaMime } : {}),
+      });
+
+      // Record session
+      await core.channel.session.recordInboundSession({
+        storePath,
+        sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
+        ctx: ctxPayload,
+        onRecordError: (err: unknown) => {
+          log?.error?.(
+            `[wechat:${account.accountId}] Failed updating session meta: ${String(err)}`,
+          );
+        },
+      });
+
+      // Dispatch reply
+      const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
         cfg,
+        agentId: route.agentId,
+        channel: "wechat",
+        accountId: account.accountId,
+      });
+
+      await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+        ctx: ctxPayload,
+        cfg,
+        dispatcherOptions: {
+          ...prefixOptions,
+          deliver: async (payload: any) => {
+            const text = payload.text ?? "";
+            if (text) {
+              const tableMode = core.channel.text.resolveMarkdownTableMode({
+                cfg,
+                channel: "wechat",
+                accountId: account.accountId,
+              });
+              const converted = core.channel.text.convertMarkdownTables(
+                text,
+                tableMode,
+              );
+              await client.sendMessage({ chatId, text: converted });
+            }
+          },
+          onError: (err: unknown, info: any) => {
+            log?.error?.(
+              `[wechat:${account.accountId}] ${info.kind} reply failed: ${String(err)}`,
+            );
+          },
+        },
+        replyOptions: {
+          onModelSelected,
+        },
       });
 
       // Record activity
-      runtime.channel.activity?.record?.({
+      core.channel.activity?.record?.({
         channel: "wechat",
         accountId: account.accountId,
         direction: "inbound",

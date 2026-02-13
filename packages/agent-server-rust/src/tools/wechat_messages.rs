@@ -304,6 +304,9 @@ pub fn list_messages(
                 None
             };
 
+            // Check if message was sent by the logged-in user
+            let is_self = sender.as_ref().map(|s| account_dir.starts_with(s.as_str()));
+
             Some(Message {
                 local_id,
                 server_id,
@@ -313,6 +316,7 @@ pub fn list_messages(
                 content,
                 timestamp,
                 is_mentioned,
+                is_self,
                 reply,
             })
         })

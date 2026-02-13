@@ -27,6 +27,29 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * Check whether a message is allowed through based on DM/group policies.
+ */
+function isMessageAllowed(
+  account: ResolvedWeChatAccount,
+  isGroup: boolean,
+  senderId: string,
+): boolean {
+  if (isGroup) {
+    if (account.groupPolicy === "disabled") return false;
+    if (account.groupPolicy === "allowlist") {
+      return account.groupAllowFrom.includes(senderId);
+    }
+    return true; // "open"
+  }
+  // Direct message
+  if (account.dmPolicy === "disabled") return false;
+  if (account.dmPolicy === "allowlist") {
+    return account.allowFrom.includes(senderId);
+  }
+  return true; // "open"
+}
+
 export async function startWeChatMonitor(
   opts: WeChatMonitorOptions,
 ): Promise<void> {
@@ -97,6 +120,11 @@ export async function startWeChatMonitor(
 
       // Filter to chats with unreads
       const unreadChats = chats.filter((c) => c.unreadCount > 0);
+      if (unreadChats.length > 0) {
+        log?.info?.(
+          `[wechat:${account.accountId}] ${unreadChats.length} chat(s) with unreads`,
+        );
+      }
 
       if (unreadChats.length > 0) {
         for (const chat of unreadChats) {
@@ -136,14 +164,20 @@ async function processUnreadChat(
   log?: { info?: (...args: any[]) => void; error?: (...args: any[]) => void },
 ): Promise<void> {
   const core = getWeChatRuntime();
+  // Re-resolve account from hot-reloaded config so policy changes take effect
+  const liveAccount =
+    resolveWeChatAccount(cfg as Record<string, unknown>, account.accountId) ??
+    account;
   const chatId = chat.username ?? chat.id;
 
   // Open the chat (triggers media downloads + clear unreads)
+  log?.info?.(`[wechat:${liveAccount.accountId}] Opening chat ${chatId}...`);
   try {
     await client.openChat(chatId, true);
+    log?.info?.(`[wechat:${liveAccount.accountId}] Opened chat ${chatId}`);
   } catch (err) {
     log?.error?.(
-      `[wechat:${account.accountId}] Failed to open chat ${chatId}: ${err}`,
+      `[wechat:${liveAccount.accountId}] Failed to open chat ${chatId}: ${err}`,
     );
   }
 
@@ -157,10 +191,14 @@ async function processUnreadChat(
     messages = await client.listMessages(chatId, fetchLimit);
   } catch (err) {
     log?.error?.(
-      `[wechat:${account.accountId}] Failed to list messages for ${chatId}: ${err}`,
+      `[wechat:${liveAccount.accountId}] Failed to list messages for ${chatId}: ${err}`,
     );
     return;
   }
+
+  log?.info?.(
+    `[wechat:${liveAccount.accountId}] ${chatId}: fetched ${messages.length} msgs, firstPoll=${firstPoll}, prevLastSeen=${prevLastSeen}, unreadCount=${chat.unreadCount}`,
+  );
 
   if (messages.length === 0) return;
 
@@ -192,6 +230,10 @@ async function processUnreadChat(
     }
     newMessages.sort((a, b) => a.localId - b.localId);
   }
+
+  log?.info?.(
+    `[wechat:${liveAccount.accountId}] ${chatId}: ${newMessages.length} new msg(s) to process`,
+  );
 
   // Wait for media to settle
   await sleep(500);
@@ -235,12 +277,18 @@ async function processUnreadChat(
     const timestamp = new Date(msg.timestamp).getTime();
     const rawBody = msg.content || "";
 
+    // Skip self-sent messages
+    if (msg.isSelf) continue;
+
+    // ---- Policy check ----
+    if (!isMessageAllowed(liveAccount, isGroup, senderId)) continue;
+
     try {
       // Resolve routing
       const route = core.channel.routing.resolveAgentRoute({
         cfg,
         channel: "wechat",
-        accountId: account.accountId,
+        accountId: liveAccount.accountId,
         peer: {
           kind: isGroup ? "group" : "direct",
           id: isGroup ? chatId : senderId,
@@ -301,7 +349,7 @@ async function processUnreadChat(
         ctx: ctxPayload,
         onRecordError: (err: unknown) => {
           log?.error?.(
-            `[wechat:${account.accountId}] Failed updating session meta: ${String(err)}`,
+            `[wechat:${liveAccount.accountId}] Failed updating session meta: ${String(err)}`,
           );
         },
       });
@@ -311,7 +359,7 @@ async function processUnreadChat(
         cfg,
         agentId: route.agentId,
         channel: "wechat",
-        accountId: account.accountId,
+        accountId: liveAccount.accountId,
       });
 
       await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
@@ -325,7 +373,7 @@ async function processUnreadChat(
               const tableMode = core.channel.text.resolveMarkdownTableMode({
                 cfg,
                 channel: "wechat",
-                accountId: account.accountId,
+                accountId: liveAccount.accountId,
               });
               const converted = core.channel.text.convertMarkdownTables(
                 text,
@@ -336,7 +384,7 @@ async function processUnreadChat(
           },
           onError: (err: unknown, info: any) => {
             log?.error?.(
-              `[wechat:${account.accountId}] ${info.kind} reply failed: ${String(err)}`,
+              `[wechat:${liveAccount.accountId}] ${info.kind} reply failed: ${String(err)}`,
             );
           },
         },
@@ -348,13 +396,13 @@ async function processUnreadChat(
       // Record activity
       core.channel.activity?.record?.({
         channel: "wechat",
-        accountId: account.accountId,
+        accountId: liveAccount.accountId,
         direction: "inbound",
         at: timestamp,
       });
     } catch (err) {
       log?.error?.(
-        `[wechat:${account.accountId}] Failed to dispatch message ${msg.localId}: ${err}`,
+        `[wechat:${liveAccount.accountId}] Failed to dispatch message ${msg.localId}: ${err}`,
       );
     }
   }

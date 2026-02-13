@@ -366,6 +366,9 @@ pub struct Message {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub sender: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub sender_name: Option<String>,
     #[serde(rename = "type")]
     #[ts(rename = "type")]
     pub msg_type: i32,

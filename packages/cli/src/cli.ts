@@ -496,7 +496,15 @@ async function cmdMessages(client: WeChatClient, chatId: string, limit: number =
   // Compute column widths
   const maxIdLen = Math.max(2, ...sorted.map(m => String(m.localId).length));
   const maxTypeLen = Math.max(4, ...sorted.map(m => getMsgTypeLabel(m.type).length));
-  const maxSenderLen = Math.max(6, ...sorted.map(m => (m.sender ?? "").length));
+  const formatSender = (m: (typeof sorted)[number]) => {
+    const name = m.senderName;
+    const id = m.sender;
+    if (name && id) return `${name}(${id.slice(0, 10)})`;
+    if (name) return name;
+    if (id) return id.slice(0, 10);
+    return "";
+  };
+  const maxSenderLen = Math.max(6, ...sorted.map(m => formatSender(m).length));
   const hasAnyMention = sorted.some(m => m.isMentioned);
   const atCol = hasAnyMention ? "@me  " : "";
   const atHeader = hasAnyMention ? "@me".padEnd(5) : "";
@@ -510,7 +518,7 @@ async function cmdMessages(client: WeChatClient, chatId: string, limit: number =
     const typeLabel = getMsgTypeLabel(msg.type);
     const id = String(msg.localId).padEnd(maxIdLen);
     const mention = hasAnyMention ? (msg.isMentioned ? "Y" : "").padEnd(5) : "";
-    const sender = (msg.sender ?? "").padEnd(maxSenderLen);
+    const sender = formatSender(msg).padEnd(maxSenderLen);
     let preview = msg.content.length > 120 ? msg.content.slice(0, 120) + "..." : msg.content;
     if (msg.reply) {
       const rSender = msg.reply.sender ? `${msg.reply.sender}: ` : "";

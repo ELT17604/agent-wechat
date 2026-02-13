@@ -166,6 +166,7 @@ export const messageSchema = z.object({
   serverId: z.number(),
   chatId: z.string(),
   sender: z.string().optional(),
+  senderName: z.string().optional(),
   type: z.number().int(),
   content: z.string(),
   timestamp: z.string(),

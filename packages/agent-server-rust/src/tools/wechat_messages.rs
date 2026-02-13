@@ -225,6 +225,43 @@ pub fn list_messages(
         ),
     );
 
+    // Resolve sender display names from contact.db
+    let contact_names: HashMap<String, String> = {
+        let mut map = HashMap::new();
+        if let Some(contact_key) = keys.get("contact.db") {
+            // Collect unique sender wxids
+            let senders: Vec<String> = rows.iter()
+                .filter_map(|row| {
+                    row.get("sender_name")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                })
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+
+            if !senders.is_empty() {
+                let contact_db = get_db_path(account_dir, "contact.db");
+                let placeholders = senders.iter().map(|s| format!("'{}'", s.replace('\'', "''"))).collect::<Vec<_>>().join(",");
+                let contacts = query_wechat_db(
+                    &contact_db,
+                    contact_key,
+                    &format!("SELECT username, nick_name, remark FROM contact WHERE username IN ({placeholders});"),
+                );
+                for c in contacts {
+                    if let Some(username) = c.get("username").and_then(|v| v.as_str()) {
+                        let name = c.get("remark").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+                            .or_else(|| c.get("nick_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+                            .unwrap_or(username);
+                        map.insert(username.to_string(), name.to_string());
+                    }
+                }
+            }
+        }
+        map
+    };
+
     rows.iter()
         .filter_map(|row| {
             let local_id = row.get("local_id")?.as_i64()?;
@@ -307,11 +344,16 @@ pub fn list_messages(
             // Check if message was sent by the logged-in user
             let is_self = sender.as_ref().map(|s| account_dir.starts_with(s.as_str()));
 
+            let sender_name = sender.as_ref()
+                .and_then(|wxid| contact_names.get(wxid))
+                .cloned();
+
             Some(Message {
                 local_id,
                 server_id,
                 chat_id: chat_id.to_string(),
                 sender,
+                sender_name,
                 msg_type,
                 content,
                 timestamp,

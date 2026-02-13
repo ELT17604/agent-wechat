@@ -251,7 +251,7 @@ async function processUnreadChat(
 
     const isGroup = chatId.includes("@chatroom");
     const senderId = msg.sender ?? chatId;
-    const senderName = msg.sender ?? chat.name;
+    const senderName = msg.senderName ?? msg.sender ?? chat.name;
 
     // ---- Policy check ----
     if (!isMessageAllowed(liveAccount, isGroup, senderId)) {

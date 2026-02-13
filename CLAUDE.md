@@ -241,6 +241,7 @@ pnpm build:image:amd64        # Build Docker image (Intel)
 ```bash
 pnpm dev:deploy               # Cross-compile Rust server + copy to running container
 cargo check                   # Type check Rust code (from packages/agent-server-rust/)
+pnpm generate-types           # Regenerate TS types from Rust (after changing ts-rs structs)
 pnpm build                    # Rebuild CLI after changes
 ```
 

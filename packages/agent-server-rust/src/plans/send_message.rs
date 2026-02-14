@@ -189,7 +189,10 @@ impl Plan for SendMessagePlan {
                     if let Some(fp) = &params.file_path {
                         exec_command("paste-file", &[fp], &ExecOptions::default()).await;
                         return Some(SelectedAction {
-                            action: Action::Key { combo: "Return".to_string() },
+                            action: actions::sequence(vec![
+                                Action::Wait { ms: 100 },
+                                Action::Key { combo: "Return".to_string() },
+                            ]),
                             metadata: None,
                         });
                     }
@@ -202,7 +205,10 @@ impl Plan for SendMessagePlan {
                         }
                         exec_command("paste-image", &args, &ExecOptions::default()).await;
                         return Some(SelectedAction {
-                            action: Action::Key { combo: "Return".to_string() },
+                            action: actions::sequence(vec![
+                                Action::Wait { ms: 100 },
+                                Action::Key { combo: "Return".to_string() },
+                            ]),
                             metadata: None,
                         });
                     }
@@ -213,6 +219,7 @@ impl Plan for SendMessagePlan {
                             action: actions::sequence(vec![
                                 Action::Key { combo: "ctrl+a".to_string() },
                                 Action::Type { text: msg.clone(), selector: None },
+                                Action::Wait { ms: 100 },
                                 Action::Key { combo: "Return".to_string() },
                             ]),
                             metadata: None,

@@ -181,6 +181,9 @@ async function processUnreadChat(
     );
   }
 
+  // Give WeChat time to flush message content to DB (especially voice/media)
+  await sleep(1000);
+
   // Determine how many messages to fetch
   const firstPoll = !lastSeenId.has(chatId);
   const prevLastSeen = lastSeenId.get(chatId) ?? 0;

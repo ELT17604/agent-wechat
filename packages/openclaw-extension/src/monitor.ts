@@ -394,18 +394,55 @@ async function processUnreadChat(
         dispatcherOptions: {
           ...prefixOptions,
           deliver: async (payload: any) => {
-            const text = payload.text ?? "";
-            if (text) {
-              const tableMode = core.channel.text.resolveMarkdownTableMode({
-                cfg,
-                channel: "wechat",
-                accountId: liveAccount.accountId,
-              });
-              const converted = core.channel.text.convertMarkdownTables(
-                text,
-                tableMode,
-              );
-              await client.sendMessage({ chatId, text: converted });
+            const mediaList: string[] = payload.mediaUrls?.length
+              ? payload.mediaUrls
+              : payload.mediaUrl
+                ? [payload.mediaUrl]
+                : [];
+
+            const tableMode = core.channel.text.resolveMarkdownTableMode({
+              cfg,
+              channel: "wechat",
+              accountId: liveAccount.accountId,
+            });
+            const text = core.channel.text.convertMarkdownTables(
+              payload.text ?? "",
+              tableMode,
+            );
+
+            if (mediaList.length > 0) {
+              for (const mediaUrl of mediaList) {
+                try {
+                  let base64: string;
+                  let mimeType: string;
+                  if (mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")) {
+                    const res = await fetch(mediaUrl);
+                    const buffer = await res.arrayBuffer();
+                    base64 = Buffer.from(buffer).toString("base64");
+                    mimeType = res.headers.get("content-type") ?? "image/png";
+                  } else {
+                    const fs = await import("fs/promises");
+                    const path = await import("path");
+                    const buf = await fs.readFile(mediaUrl);
+                    base64 = buf.toString("base64");
+                    const ext = path.extname(mediaUrl).toLowerCase().replace(".", "");
+                    const extMime: Record<string, string> = {
+                      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+                      gif: "image/gif", webp: "image/webp",
+                    };
+                    mimeType = extMime[ext] ?? "image/png";
+                  }
+                  await client.sendMessage({ chatId, image: { data: base64, mimeType } });
+                } catch (err) {
+                  log?.error?.(`[wechat:${liveAccount.accountId}] Failed to send media: ${err}`);
+                }
+              }
+              // Send text caption separately if present
+              if (text) {
+                await client.sendMessage({ chatId, text });
+              }
+            } else if (text) {
+              await client.sendMessage({ chatId, text });
             }
           },
           onError: (err: unknown, info: any) => {

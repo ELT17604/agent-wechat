@@ -153,14 +153,28 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         return { channel: "wechat", ok: false, error: "No serverUrl configured" };
       }
       const client = new WeChatClient({ baseUrl: account.serverUrl });
-      // Fetch media URL → base64
       if (mediaUrl) {
         try {
-          const res = await fetch(mediaUrl);
-          const buffer = await res.arrayBuffer();
-          const base64 = Buffer.from(buffer).toString("base64");
-          const mimeType =
-            res.headers.get("content-type") ?? "image/png";
+          let base64: string;
+          let mimeType: string;
+          if (mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")) {
+            const res = await fetch(mediaUrl);
+            const buffer = await res.arrayBuffer();
+            base64 = Buffer.from(buffer).toString("base64");
+            mimeType = res.headers.get("content-type") ?? "image/png";
+          } else {
+            // Local file path
+            const fs = await import("fs/promises");
+            const path = await import("path");
+            const buf = await fs.readFile(mediaUrl);
+            base64 = buf.toString("base64");
+            const ext = path.extname(mediaUrl).toLowerCase().replace(".", "");
+            const extMime: Record<string, string> = {
+              png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+              gif: "image/gif", webp: "image/webp",
+            };
+            mimeType = extMime[ext] ?? "image/png";
+          }
           const result = await client.sendMessage({
             chatId: to,
             text: text || undefined,
@@ -175,7 +189,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
           return {
             channel: "wechat",
             ok: false,
-            error: `Failed to fetch media: ${err}`,
+            error: `Failed to send media: ${err}`,
           };
         }
       }

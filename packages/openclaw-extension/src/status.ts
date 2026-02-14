@@ -39,7 +39,7 @@ export async function collectWeChatStatusIssues(
         accountId: snapshot.accountId,
         kind: "auth",
         message: "WeChat session not authenticated.",
-        fix: "Run: pnpm cli auth login (on the agent-wechat host)",
+        fix: "Run: openclaw channels login --channel wechat",
       });
     }
   }

@@ -4,6 +4,7 @@ import type {
   SendResult,
   MediaResult,
   LoginResult,
+  LoginSubscriptionEvent,
   OpenChatResult,
   Session,
   SendParams,
@@ -215,5 +216,58 @@ export class WeChatClient {
     id: string,
   ): Promise<{ success: boolean }> {
     return this.del(`/api/sessions/${encodeURIComponent(id)}`);
+  }
+
+  // ---- Login subscription (WebSocket) ----
+
+  /**
+   * Subscribe to login events via WebSocket.
+   * Uses the native WebSocket API (Node 22+).
+   * Returns a handle with close() to tear down the connection.
+   */
+  loginSubscribe(opts: {
+    timeoutMs?: number;
+    newAccount?: boolean;
+    onEvent: (event: LoginSubscriptionEvent) => void;
+    onError?: (err: Error) => void;
+    onClose?: () => void;
+  }): { close: () => void } {
+    const wsUrl = this.base.replace(/^http/, "ws");
+    const params = qs({
+      timeoutMs: opts.timeoutMs,
+      newAccount: opts.newAccount,
+    });
+    const ws = new WebSocket(`${wsUrl}/api/ws/login${params}`);
+
+    ws.addEventListener("message", (event) => {
+      try {
+        const data =
+          typeof event.data === "string"
+            ? event.data
+            : String(event.data);
+        const parsed = JSON.parse(data) as LoginSubscriptionEvent;
+        opts.onEvent(parsed);
+      } catch (e) {
+        opts.onError?.(e instanceof Error ? e : new Error(String(e)));
+      }
+    });
+
+    ws.addEventListener("error", (event) => {
+      const msg =
+        event instanceof ErrorEvent
+          ? event.message
+          : "WebSocket error";
+      opts.onError?.(new Error(msg));
+    });
+
+    ws.addEventListener("close", () => {
+      opts.onClose?.();
+    });
+
+    return {
+      close: () => {
+        ws.close();
+      },
+    };
   }
 }

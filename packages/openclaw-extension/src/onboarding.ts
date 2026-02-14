@@ -1,5 +1,6 @@
 import { WeChatClient } from "@thisnick/agent-wechat-shared";
 import type { ResolvedWeChatAccount } from "./types.js";
+import { loginTerminal } from "./login.js";
 
 export interface OnboardingStatus {
   configured: boolean;
@@ -17,6 +18,8 @@ export interface WizardPrompter {
     hint?: string;
   }): Promise<string[]>;
   confirm(opts: { message: string; default?: boolean }): Promise<boolean>;
+  note?(message: string, title?: string): Promise<void>;
+  log?(message: string): void;
 }
 
 export const wechatOnboardingAdapter = {
@@ -55,7 +58,7 @@ export const wechatOnboardingAdapter = {
           `Logged in${auth.loggedInUser ? ` as ${auth.loggedInUser}` : ""}`,
         );
       } else {
-        lines.push("Not logged in. Run: pnpm cli auth login");
+        lines.push("Not logged in. Run: openclaw channels login --channel wechat");
       }
     } catch {
       lines.push("Could not check auth status");
@@ -99,16 +102,73 @@ export const wechatOnboardingAdapter = {
       );
     }
 
-    // 3. Check auth
+    // 3. Check auth — offer to link during onboarding
     try {
       const auth = await client.authStatus();
       if (!auth.isLoggedIn) {
-        // Not a fatal error — user can log in later
-        await prompter.confirm({
-          message:
-            "WeChat is not logged in. You can log in later with: pnpm cli auth login. Continue setup?",
+        const wantsLink = await prompter.confirm({
+          message: "WeChat not logged in. Link now?",
           default: true,
         });
+        if (wantsLink) {
+          await prompter.note?.(
+            "Starting login — watch for QR code or phone confirmation.",
+            "WeChat Login",
+          );
+          try {
+            await loginTerminal(client, {
+              onEvent: (event) => {
+                switch (event.type) {
+                  case "status":
+                    prompter.log?.(`Status: ${event.message}`);
+                    break;
+                  case "qr":
+                    prompter.log?.("Scan this QR code with WeChat:\n");
+                    if (event.qrData) {
+                      try {
+                        const qrTerminalMod = require("qrcode-terminal");
+                        const qrInput = event.qrBinaryData
+                          ? Buffer.from(event.qrBinaryData as number[]).toString("utf-8")
+                          : event.qrData;
+                        qrTerminalMod.generate(qrInput, { small: true }, (qr: string) => {
+                          prompter.log?.(qr);
+                        });
+                      } catch {
+                        if (event.qrDataUrl) {
+                          prompter.log?.("(QR data URL available — open in browser to scan)");
+                        }
+                      }
+                    }
+                    prompter.log?.("\nWaiting for scan...\n");
+                    break;
+                  case "phone_confirm":
+                    prompter.log?.(
+                      `\n${event.message || "Please confirm login on your phone"}\n`,
+                    );
+                    break;
+                  case "login_success":
+                    prompter.log?.("\nLogin successful!");
+                    break;
+                  case "login_timeout":
+                    prompter.log?.("\nLogin timed out.");
+                    break;
+                  case "error":
+                    prompter.log?.(`\nError: ${event.message}`);
+                    break;
+                }
+              },
+            });
+          } catch (err) {
+            prompter.log?.(
+              `Login failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        } else {
+          await prompter.note?.(
+            "Run `openclaw channels login --channel wechat` later to link.",
+            "WeChat",
+          );
+        }
       }
     } catch {
       // Auth check failed — continue setup anyway

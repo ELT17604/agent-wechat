@@ -6,6 +6,7 @@ import { startWeChatMonitor } from "./monitor.js";
 import { wechatOnboardingAdapter } from "./onboarding.js";
 import { collectWeChatStatusIssues } from "./status.js";
 import { WeChatClient } from "@thisnick/agent-wechat-shared";
+import { loginStart, loginWait, loginTerminal } from "./login.js";
 
 const meta: ChannelMeta = {
   id: "wechat",
@@ -19,6 +20,7 @@ const meta: ChannelMeta = {
 export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
   id: "wechat",
   meta,
+  gatewayMethods: ["web.login.start", "web.login.wait"],
 
   capabilities: {
     chatTypes: ["direct", "group"],
@@ -204,6 +206,130 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         log: ctx.log,
         cfg: ctx.cfg,
       });
+    },
+
+    loginWithQrStart: async ({ cfg, accountId, force, timeoutMs }: {
+      cfg: any;
+      accountId: string;
+      force?: boolean;
+      timeoutMs?: number;
+    }) => {
+      const account = resolveWeChatAccount(
+        cfg as Record<string, unknown>,
+        accountId ?? undefined,
+      );
+      if (!account?.serverUrl) {
+        return { message: "No serverUrl configured. Run: openclaw channels setup wechat" };
+      }
+      const client = new WeChatClient({ baseUrl: account.serverUrl });
+
+      try {
+        const result = await loginStart(client, accountId, { timeoutMs, force });
+        return result;
+      } catch (err) {
+        return {
+          message: `Login failed: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+
+    loginWithQrWait: async ({ accountId, timeoutMs }: {
+      cfg: any;
+      accountId: string;
+      timeoutMs?: number;
+    }) => {
+      const result = await loginWait(accountId, { timeoutMs });
+      return result;
+    },
+  },
+
+  // ---- Auth adapter ----
+  auth: {
+    login: async ({ cfg, accountId, runtime }: {
+      cfg: any;
+      accountId: string;
+      runtime: any;
+      verbose?: boolean;
+    }) => {
+      const account = resolveWeChatAccount(
+        cfg as Record<string, unknown>,
+        accountId ?? undefined,
+      );
+      if (!account?.serverUrl) {
+        throw new Error(
+          "No serverUrl configured. Run: openclaw channels setup wechat",
+        );
+      }
+
+      const client = new WeChatClient({ baseUrl: account.serverUrl });
+
+      // Check if already logged in
+      try {
+        const auth = await client.authStatus();
+        if (auth.isLoggedIn) {
+          runtime.log(
+            `Already logged in${auth.loggedInUser ? ` as ${auth.loggedInUser}` : ""}`,
+          );
+          return;
+        }
+      } catch {
+        // Auth check failed — proceed with login anyway
+      }
+
+      runtime.log("Starting WeChat login...\n");
+
+      const { connected, message } = await loginTerminal(client, {
+        onEvent: (event) => {
+          switch (event.type) {
+            case "status":
+              runtime.log(`Status: ${event.message}`);
+              break;
+            case "qr":
+              runtime.log("Scan this QR code with WeChat:\n");
+              if (event.qrData) {
+                // Print QR to terminal using qrcode-terminal if available,
+                // otherwise show the data URL
+                try {
+                  const qrTerminal = require("qrcode-terminal");
+                  const qrInput = event.qrBinaryData
+                    ? Buffer.from(event.qrBinaryData as number[]).toString("utf-8")
+                    : event.qrData;
+                  qrTerminal.generate(qrInput, { small: true }, (qr: string) => {
+                    runtime.log(qr);
+                  });
+                } catch {
+                  // qrcode-terminal not available — show data URL hint
+                  if (event.qrDataUrl) {
+                    runtime.log("(QR data URL available — open in browser to scan)");
+                  }
+                }
+              }
+              runtime.log("\nWaiting for scan...\n");
+              break;
+            case "phone_confirm":
+              runtime.log(
+                `\n${event.message || "Please confirm login on your phone"}\n`,
+              );
+              break;
+            case "login_success":
+              runtime.log("\nLogin successful!");
+              if (event.userId) {
+                runtime.log(`User: ${event.userId}`);
+              }
+              break;
+            case "login_timeout":
+              runtime.log("\nLogin timed out. Please try again.");
+              break;
+            case "error":
+              runtime.log(`\nError: ${event.message}`);
+              break;
+          }
+        },
+      });
+
+      if (!connected) {
+        throw new Error(message);
+      }
     },
   },
 

@@ -4,16 +4,21 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Query a WeChat database and return parsed rows.
-/// Opens the database **read-only** via rusqlite to avoid journal/WAL
-/// contention with WeChat's own writes.
+/// Opens the database with `immutable=1` to avoid acquiring any shared locks
+/// that could interfere with WeChat's own writes. Since we open a fresh
+/// connection per query and drop it immediately, immutable mode is safe —
+/// we always see the latest committed state at open time.
 pub fn query_wechat_db(
     db_path: &str,
     hex_key: &str,
     sql: &str,
 ) -> Vec<Value> {
+    let uri = format!("file:{}?immutable=1", db_path);
     let conn = match Connection::open_with_flags(
-        db_path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        &uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     ) {
         Ok(c) => c,
         Err(e) => {

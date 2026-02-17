@@ -6,6 +6,7 @@ mod sessions;
 mod status;
 
 use axum::{
+    extract::DefaultBodyLimit,
     http::Method,
     routing::{get, post},
     Router,
@@ -48,5 +49,6 @@ pub fn build_router() -> Router {
         .route("/api/ws/login", get(status::login_ws))
         // Events WebSocket
         .route("/api/ws/events", get(events::events_ws))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50 MB for media uploads
         .layer(cors)
 }

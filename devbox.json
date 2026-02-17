@@ -6,7 +6,8 @@
     "colima",
     "direnv@latest",
     "rustup",
-    "cargo-watch"
+    "cargo-watch",
+    "sqlcipher"
   ],
   "shell": {
     "init_hook": [

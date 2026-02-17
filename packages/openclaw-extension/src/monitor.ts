@@ -1,5 +1,5 @@
 import { WeChatClient } from "@thisnick/agent-wechat-shared";
-import type { Chat, Message } from "@thisnick/agent-wechat-shared";
+import type { Chat, Message, MediaResult } from "@thisnick/agent-wechat-shared";
 import { createReplyPrefixOptions } from "openclaw/plugin-sdk";
 import type { ResolvedWeChatAccount } from "./types.js";
 import { getWeChatRuntime } from "./runtime.js";
@@ -25,6 +25,30 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       resolve();
     });
   });
+}
+
+/**
+ * Poll for media data, retrying until data is available or max attempts reached.
+ */
+async function pollMedia(
+  client: WeChatClient,
+  chatId: string,
+  localId: number,
+  log?: { info?: (...args: any[]) => void; error?: (...args: any[]) => void },
+  maxAttempts = 5,
+  intervalMs = 1000,
+): Promise<MediaResult | null> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = await client.getMedia(chatId, localId);
+    if (result.data && result.type !== "unsupported") {
+      return result;
+    }
+    if (attempt < maxAttempts) {
+      log?.info?.(`[media] Attempt ${attempt}/${maxAttempts} for ${chatId}:${localId} returned no data, retrying...`);
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+  }
+  return null;
 }
 
 /**
@@ -235,9 +259,6 @@ async function processUnreadChat(
     `[wechat:${liveAccount.accountId}] ${chatId}: ${newMessages.length} new msg(s) to process`,
   );
 
-  // Wait for media to settle
-  await sleep(500);
-
   for (const msg of newMessages) {
     log?.info?.(
       `[wechat:${liveAccount.accountId}] Processing msg ${msg.localId}: type=${msg.type}, sender=${msg.sender}, isSelf=${msg.isSelf}, content=${(msg.content || "").slice(0, 50)}`,
@@ -267,9 +288,9 @@ async function processUnreadChat(
     if (MEDIA_TYPES.has(baseType)) {
       log?.info?.(`[wechat:${liveAccount.accountId}] Downloading media for msg ${msg.localId} (type ${baseType})`);
       try {
-        const result = await client.getMedia(chatId, msg.localId);
-        log?.info?.(`[wechat:${liveAccount.accountId}] Media result: type=${result.type}, format=${result.format}, hasData=${!!result.data}`);
-        if (result.data && result.type !== "unsupported") {
+        const result = await pollMedia(client, chatId, msg.localId, log);
+        if (result) {
+          log?.info?.(`[wechat:${liveAccount.accountId}] Media result: type=${result.type}, format=${result.format}, hasData=${!!result.data}`);
           const mimeMap: Record<string, string> = {
             jpeg: "image/jpeg",
             jpg: "image/jpeg",
@@ -279,7 +300,7 @@ async function processUnreadChat(
           };
           mediaMime = mimeMap[result.format] ?? `application/${result.format}`;
           // Save media to temp file via runtime
-          const buf = Buffer.from(result.data, "base64");
+          const buf = Buffer.from(result.data!, "base64");
           const saved = await core.channel.media.saveMediaBuffer(
             buf,
             mediaMime,
@@ -289,6 +310,8 @@ async function processUnreadChat(
           );
           mediaPath = saved?.path;
           log?.info?.(`[wechat:${liveAccount.accountId}] Saved media to ${mediaPath}`);
+        } else {
+          log?.info?.(`[wechat:${liveAccount.accountId}] Media not available after retries for msg ${msg.localId}`);
         }
       } catch (err) {
         log?.error?.(`[wechat:${liveAccount.accountId}] Media download failed: ${err}`);
@@ -305,6 +328,16 @@ async function processUnreadChat(
       } else if (mediaMime.startsWith("image/")) {
         rawBody = "<media:image>";
       }
+    }
+
+    // Append reply context for quote/reply messages
+    if (msg.reply) {
+      const replySender = msg.reply.sender ?? "unknown sender";
+      const quotedBody = msg.reply.content.length > 50
+        ? msg.reply.content.slice(0, 50) + "..."
+        : msg.reply.content;
+      const replyBlock = `[Replying to ${replySender}]\n${quotedBody}\n[/Replying]`;
+      rawBody = rawBody ? `${rawBody}\n\n${replyBlock}` : replyBlock;
     }
 
     log?.info?.(`[wechat:${liveAccount.accountId}] Dispatching msg ${msg.localId}: body="${rawBody.slice(0, 80)}"${mediaPath ? ` media=${mediaPath}` : ""}`);
@@ -366,6 +399,10 @@ async function processUnreadChat(
         OriginatingChannel: "wechat",
         OriginatingTo: `wechat:${chatId}`,
         ...(mediaPath ? { MediaPath: mediaPath, MediaUrl: mediaPath, MediaType: mediaMime } : {}),
+        ...(msg.reply ? {
+          ReplyToBody: msg.reply.content.length > 50 ? msg.reply.content.slice(0, 50) + "..." : msg.reply.content,
+          ReplyToSender: msg.reply.sender,
+        } : {}),
       });
 
       // Record session

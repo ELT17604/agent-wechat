@@ -19,7 +19,9 @@ pnpm build
 echo "Deploying to $TARGET"
 mkdir -p "$TARGET/dist"
 cp "$EXT_DIR/dist/index.js" "$TARGET/dist/index.js"
-cp "$EXT_DIR/package.json" "$TARGET/package.json"
+# Strip dependencies/devDependencies — esbuild bundles everything into dist/index.js
+# so workspace:* refs would break in openclaw's pnpm workspace
+jq 'del(.dependencies, .devDependencies)' "$EXT_DIR/package.json" > "$TARGET/package.json"
 cp "$EXT_DIR/openclaw.plugin.json" "$TARGET/openclaw.plugin.json"
 
 echo "Done."

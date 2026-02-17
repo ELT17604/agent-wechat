@@ -37,3 +37,6 @@ screenshot.png
 .env
 .env.local
 .envrc
+
+# Downloaded WeChat data files
+wechat_files/

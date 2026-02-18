@@ -119,10 +119,12 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
   // ---- Messaging adapter ----
   messaging: {
-    normalizeTarget: (raw) => raw, // WeChat IDs are used as-is
+    normalizeTarget: (raw) => raw.replace(/^wechat:/i, "").trim() || undefined,
     targetResolver: {
-      looksLikeId: (raw) =>
-        raw.includes("@chatroom") || raw.startsWith("wxid_"),
+      looksLikeId: (raw) => {
+        const stripped = raw.replace(/^wechat:/i, "").trim();
+        return stripped.includes("@chatroom") || stripped.startsWith("wxid_");
+      },
       hint: "WeChat ID (wxid_xxx or xxx@chatroom)",
     },
   },

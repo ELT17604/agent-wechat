@@ -73,9 +73,34 @@ fn clean_content(content: &str, msg_type: i32) -> String {
                 .filter(|u| u.starts_with("http"))
                 .unwrap_or_else(|| "[emoji]".to_string())
         }
-        // Appmsg (type 49): extract title
+        // Appmsg (type 49): handle subtypes
         49 if content.contains("<msg>") => {
-            extract_xml_tag(content, "title").unwrap_or_else(|| content.to_string())
+            let title = extract_xml_tag(content, "title").unwrap_or_default();
+            let appmsg_type = extract_xml_tag(content, "type")
+                .and_then(|t| t.parse::<i32>().ok())
+                .unwrap_or(0);
+            match appmsg_type {
+                // Link share (5), video link (4), music share (3)
+                3 | 4 | 5 => {
+                    let mut parts = Vec::new();
+                    parts.push(format!("[Link] {title}"));
+                    if let Some(des) = extract_xml_tag(content, "des") {
+                        parts.push(des);
+                    }
+                    if let Some(url) = extract_xml_tag(content, "url") {
+                        let url = url.replace("&amp;", "&");
+                        parts.push(url);
+                    }
+                    parts.join("\n")
+                }
+                _ => {
+                    if title.is_empty() {
+                        content.to_string()
+                    } else {
+                        title
+                    }
+                }
+            }
         }
         _ => content.to_string(),
     }

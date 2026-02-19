@@ -253,21 +253,34 @@ async function prepareMessage(
   let hasMedia = false;
 
   const baseType = msg.type & 0x7fffffff;
-  if (MEDIA_TYPES.has(baseType)) {
-    hasMedia = true;
-    log?.info?.(`[wechat:${liveAccount.accountId}] Downloading media for msg ${msg.localId} (type ${baseType})`);
+  // Type 49 (appmsg) may contain file attachments — the server resolves subtypes
+  // and returns type="file" for subtype 6. Try fetching media for type 49 as well.
+  const mayHaveMedia = MEDIA_TYPES.has(baseType) || baseType === 49;
+
+  if (mayHaveMedia) {
+    log?.info?.(`[wechat:${liveAccount.accountId}] Checking media for msg ${msg.localId} (type ${baseType})`);
     try {
       const result = await pollMedia(client, chatId, msg.localId, log);
-      if (result) {
-        log?.info?.(`[wechat:${liveAccount.accountId}] Media result: type=${result.type}, format=${result.format}, hasData=${!!result.data}`);
+      if (result && result.data && result.type !== "unsupported") {
+        hasMedia = true;
+        log?.info?.(`[wechat:${liveAccount.accountId}] Media result: type=${result.type}, format=${result.format}, hasData=${!!result.data}, filename=${result.filename}`);
         const mimeMap: Record<string, string> = {
           jpeg: "image/jpeg",
           jpg: "image/jpeg",
           png: "image/png",
           gif: "image/gif",
           mp3: "audio/mpeg",
+          pdf: "application/pdf",
+          doc: "application/msword",
+          docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          xls: "application/vnd.ms-excel",
+          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ppt: "application/vnd.ms-powerpoint",
+          pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          zip: "application/zip",
+          txt: "text/plain",
         };
-        mediaMime = mimeMap[result.format] ?? `application/${result.format}`;
+        mediaMime = mimeMap[result.format] ?? `application/${result.format || "octet-stream"}`;
         const buf = Buffer.from(result.data!, "base64");
         const saved = await core.channel.media.saveMediaBuffer(
           buf,
@@ -278,7 +291,9 @@ async function prepareMessage(
         );
         mediaPath = saved?.path;
         log?.info?.(`[wechat:${liveAccount.accountId}] Saved media to ${mediaPath}`);
-      } else {
+      } else if (MEDIA_TYPES.has(baseType)) {
+        // Image/voice expected media but got nothing
+        hasMedia = true;
         log?.info?.(`[wechat:${liveAccount.accountId}] Media not available after retries for msg ${msg.localId}`);
       }
     } catch (err) {
@@ -288,11 +303,18 @@ async function prepareMessage(
 
   const timestamp = new Date(msg.timestamp).getTime();
   let rawBody = msg.content || "";
-  if (!rawBody && mediaPath && mediaMime) {
-    if (mediaMime.startsWith("audio/")) {
-      rawBody = "<media:audio>";
-    } else if (mediaMime.startsWith("image/")) {
-      rawBody = "<media:image>";
+  if (mediaPath && mediaMime) {
+    if (!rawBody) {
+      if (mediaMime.startsWith("audio/")) {
+        rawBody = "<media:audio>";
+      } else if (mediaMime.startsWith("image/")) {
+        rawBody = "<media:image>";
+      } else {
+        rawBody = "<media:file>";
+      }
+    } else if (!mediaMime.startsWith("image/") && !mediaMime.startsWith("audio/")) {
+      // For file attachments, content is the filename — annotate it
+      rawBody = `[File: ${rawBody}]`;
     }
   }
 
@@ -536,26 +558,37 @@ async function dispatchSegment(
           if (mediaList.length > 0) {
             for (const mediaUrl of mediaList) {
               try {
+                const fsmod = await import("fs/promises");
+                const pathmod = await import("path");
+
                 let base64: string;
                 let mimeType: string;
+                let filename: string;
                 if (mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")) {
                   const res = await fetch(mediaUrl);
                   const buffer = await res.arrayBuffer();
                   base64 = Buffer.from(buffer).toString("base64");
-                  mimeType = res.headers.get("content-type") ?? "image/png";
+                  mimeType = res.headers.get("content-type") ?? "application/octet-stream";
+                  const urlPath = new URL(mediaUrl).pathname;
+                  filename = pathmod.basename(urlPath) || "file";
                 } else {
-                  const fs = await import("fs/promises");
-                  const path = await import("path");
-                  const buf = await fs.readFile(mediaUrl);
+                  const buf = await fsmod.readFile(mediaUrl);
                   base64 = buf.toString("base64");
-                  const ext = path.extname(mediaUrl).toLowerCase().replace(".", "");
+                  filename = pathmod.basename(mediaUrl);
+                  const ext = pathmod.extname(mediaUrl).toLowerCase().replace(".", "");
                   const extMime: Record<string, string> = {
                     png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
                     gif: "image/gif", webp: "image/webp",
                   };
-                  mimeType = extMime[ext] ?? "image/png";
+                  mimeType = extMime[ext] ?? "application/octet-stream";
                 }
-                await client.sendMessage({ chatId, image: { data: base64, mimeType } });
+
+                const isImage = mimeType.startsWith("image/");
+                if (isImage) {
+                  await client.sendMessage({ chatId, image: { data: base64, mimeType } });
+                } else {
+                  await client.sendMessage({ chatId, file: { data: base64, filename } });
+                }
               } catch (err) {
                 log?.error?.(`[wechat:${liveAccount.accountId}] Failed to send media: ${err}`);
               }

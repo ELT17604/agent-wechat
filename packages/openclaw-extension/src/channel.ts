@@ -7,6 +7,8 @@ import { wechatOnboardingAdapter } from "./onboarding.js";
 import { collectWeChatStatusIssues } from "./status.js";
 import { WeChatClient } from "@thisnick/agent-wechat-shared";
 import { loginStart, loginWait, loginTerminal } from "./login.js";
+// loginWait still used by gateway.loginWithQrWait
+import { createWeChatLoginTool } from "./agent-tools.js";
 
 const meta: ChannelMeta = {
   id: "wechat",
@@ -385,6 +387,87 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
   // ---- Status adapter ----
   status: {
     collectStatusIssues: collectWeChatStatusIssues,
+  },
+
+  // ---- Agent tools adapter ----
+  agentTools: ({ cfg }) => {
+    const account = resolveWeChatAccount(cfg as Record<string, unknown>);
+    if (!account?.serverUrl) return [];
+    return [createWeChatLoginTool(account)];
+  },
+
+  // ---- Directory adapter ----
+  directory: {
+    self: async ({ cfg }) => {
+      const account = resolveWeChatAccount(cfg as Record<string, unknown>);
+      if (!account?.serverUrl) return null;
+      const client = new WeChatClient({ baseUrl: account.serverUrl, token: account.token });
+      try {
+        const auth = await client.authStatus();
+        if (!auth.isLoggedIn || !auth.loggedInUser) return null;
+        return { kind: "user" as const, id: auth.loggedInUser };
+      } catch {
+        return null;
+      }
+    },
+    listPeers: async ({ cfg, query, limit }) => {
+      const account = resolveWeChatAccount(cfg as Record<string, unknown>);
+      if (!account?.serverUrl) return [];
+      const client = new WeChatClient({ baseUrl: account.serverUrl, token: account.token });
+      try {
+        const chats = query
+          ? await client.findChats(query)
+          : await client.listChats(limit ?? 50);
+        return chats
+          .filter((c) => !c.username.includes("@chatroom"))
+          .map((c) => ({
+            kind: "user" as const,
+            id: c.username,
+            name: c.name,
+          }));
+      } catch {
+        return [];
+      }
+    },
+    listGroups: async ({ cfg, query, limit }) => {
+      const account = resolveWeChatAccount(cfg as Record<string, unknown>);
+      if (!account?.serverUrl) return [];
+      const client = new WeChatClient({ baseUrl: account.serverUrl, token: account.token });
+      try {
+        const chats = query
+          ? await client.findChats(query)
+          : await client.listChats(limit ?? 50);
+        return chats
+          .filter((c) => c.username.includes("@chatroom"))
+          .map((c) => ({
+            kind: "group" as const,
+            id: c.username,
+            name: c.name,
+          }));
+      } catch {
+        return [];
+      }
+    },
+  },
+
+  // ---- Heartbeat adapter ----
+  heartbeat: {
+    checkReady: async ({ cfg }) => {
+      const account = resolveWeChatAccount(cfg as Record<string, unknown>);
+      if (!account?.serverUrl) {
+        return { ok: false, reason: "wechat-not-configured" };
+      }
+      const client = new WeChatClient({ baseUrl: account.serverUrl, token: account.token });
+      try {
+        const auth = await client.authStatus();
+        if (!auth.isLoggedIn) {
+          return { ok: false, reason: "wechat-not-logged-in" };
+        }
+        return { ok: true, reason: "ok" };
+      } catch {
+        return { ok: false, reason: "wechat-unreachable" };
+      }
+    },
   },
 
   // ---- Setup adapter (channels add) ----

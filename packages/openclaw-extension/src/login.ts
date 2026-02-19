@@ -5,6 +5,7 @@ type ActiveLogin = {
   accountId: string;
   handle: { close: () => void };
   startedAt: number;
+  qrData?: string;
   qrDataUrl?: string;
   message?: string;
   connected: boolean;
@@ -163,6 +164,34 @@ export function loginWait(
 }
 
 /**
+ * Get the current state of an active login session (if any).
+ * Used by agent tools to poll without blocking.
+ */
+export function getActiveLoginState(accountId: string): {
+  active: boolean;
+  qrData?: string;
+  message?: string;
+  connected?: boolean;
+  done?: boolean;
+  error?: string;
+} {
+  cleanupStale();
+  const login = activeLogins.get(accountId);
+  if (!login) return { active: false };
+  if (login.done) {
+    activeLogins.delete(accountId);
+  }
+  return {
+    active: true,
+    qrData: login.qrData,
+    message: login.message,
+    connected: login.connected,
+    done: login.done,
+    error: login.error,
+  };
+}
+
+/**
  * Cancel/reset any active login for the given account.
  */
 export function loginReset(accountId: string): void {
@@ -221,6 +250,7 @@ export function loginTerminal(
 function handleEvent(login: ActiveLogin, event: LoginSubscriptionEvent) {
   switch (event.type) {
     case "qr":
+      login.qrData = event.qrData;
       login.qrDataUrl = event.qrDataUrl;
       login.message = "Scan QR code with WeChat";
       break;

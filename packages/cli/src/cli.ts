@@ -9,7 +9,8 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const VERSION = "0.1.0";
+declare const PKG_VERSION: string;
+const VERSION = PKG_VERSION;
 const CONTAINER_NAME = "agent-wechat";
 const GHCR_IMAGE = "ghcr.io/thisnick/agent-wechat";
 const DEFAULT_PORT = 6174;
@@ -59,7 +60,7 @@ function getConfig(): Config {
 }
 
 function getImageTag(): string {
-  return `${GHCR_IMAGE}:latest`;
+  return `${GHCR_IMAGE}:${VERSION}`;
 }
 
 // Create program
@@ -758,7 +759,7 @@ async function cmdSessionDelete(client: WeChatClient, idOrName: string) {
 // ============================================
 
 async function cmdUp() {
-  const image = getImageTag();
+  let image = getImageTag();
 
   // Check if container already exists
   try {
@@ -789,8 +790,21 @@ async function cmdUp() {
     try {
       execSync(`docker pull ${image}`, { stdio: "inherit" });
     } catch {
-      console.error(`Failed to pull ${image}. Check your internet connection and Docker setup.`);
-      process.exit(1);
+      // Versioned tag may not exist yet — fall back to latest
+      const fallback = `${GHCR_IMAGE}:latest`;
+      if (image !== fallback) {
+        console.log(`Tag ${VERSION} not found, trying latest...`);
+        try {
+          execSync(`docker pull ${fallback}`, { stdio: "inherit" });
+          image = fallback;
+        } catch {
+          console.error(`Failed to pull ${fallback}. Check your internet connection and Docker setup.`);
+          process.exit(1);
+        }
+      } else {
+        console.error(`Failed to pull ${image}. Check your internet connection and Docker setup.`);
+        process.exit(1);
+      }
     }
   }
 

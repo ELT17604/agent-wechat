@@ -9,7 +9,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --format=esm --platform=node --outfile=dist/cli.js --banner:js='#!/usr/bin/env node\nimport{createRequire}from\"module\";const require=createRequire(import.meta.url);' --external:qrcode-terminal",
+    "build": "node build.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

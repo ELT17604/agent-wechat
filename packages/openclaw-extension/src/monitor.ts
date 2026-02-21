@@ -56,7 +56,7 @@ async function pollMedia(
   chatId: string,
   localId: number,
   log?: { info?: (...args: any[]) => void; error?: (...args: any[]) => void },
-  maxAttempts = 5,
+  maxAttempts = 15,
   intervalMs = 1000,
 ): Promise<MediaResult | null> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

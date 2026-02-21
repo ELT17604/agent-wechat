@@ -4,12 +4,59 @@ OpenClaw channel plugin for WeChat. Polls the agent-wechat REST API for inbound 
 
 ## Prerequisites
 
-- **agent-wechat container** running and reachable (provides the REST API on port 6174). Install [`@agent-wechat/cli`](https://www.npmjs.com/package/@agent-wechat/cli) and run `wx up`, or use Docker Compose — see the [CLI docs](https://github.com/thisnick/agent-wechat/tree/main/packages/cli#running-the-container) for setup options.
-- **OpenClaw** installed and configured
+- [Docker](https://docs.docker.com/get-docker/) installed and running
+- OpenClaw installed and configured
 
-> **Note:** The agent-wechat container requires `SYS_PTRACE` and `seccomp=unconfined` (ptrace access to the WeChat desktop process). It cannot run in serverless or restricted container environments — use a VM or bare-metal Docker host.
+> **Note:** The agent-wechat container requires `SYS_PTRACE` and `seccomp=unconfined` (ptrace access to the WeChat desktop process). It cannot run in serverless or restricted container environments (AWS Fargate, Cloud Run, etc.) — use a VM or bare-metal Docker host.
 
-## Install
+## Setup
+
+### 1. Start the agent-wechat container
+
+**Option A: CLI** (quickest for local use)
+
+```bash
+npm install -g @agent-wechat/cli
+wx up
+```
+
+**Option B: Docker Compose** (production / networked)
+
+```yaml
+services:
+  agent-wechat:
+    image: ghcr.io/thisnick/agent-wechat:latest
+    container_name: agent-wechat
+    security_opt:
+      - seccomp=unconfined
+    cap_add:
+      - SYS_PTRACE
+    ports:
+      - "6174:6174"
+      - "127.0.0.1:5900:5900"
+    volumes:
+      - agent-wechat-data:/data
+      - agent-wechat-home:/home/wechat
+      - ~/.config/agent-wechat/token:/data/auth-token:ro
+    restart: unless-stopped
+
+volumes:
+  agent-wechat-data:
+  agent-wechat-home:
+```
+
+Generate a token before starting:
+
+```bash
+mkdir -p ~/.config/agent-wechat
+openssl rand -hex 32 > ~/.config/agent-wechat/token
+chmod 600 ~/.config/agent-wechat/token
+docker compose up -d
+```
+
+If running alongside OpenClaw on the same Docker network, set `serverUrl` to `http://agent-wechat:6174` in the channel config below.
+
+### 2. Install the extension
 
 ```bash
 openclaw plugins install @agent-wechat/wechat

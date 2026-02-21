@@ -62,7 +62,17 @@ If running alongside OpenClaw on the same Docker network, set `serverUrl` to `ht
 openclaw plugins install @agent-wechat/wechat
 ```
 
-## Configure
+### 3. Log in to WeChat
+
+```bash
+openclaw channels login --channel wechat
+```
+
+This displays a QR code in your terminal — scan it with WeChat on your phone. You only need to do this once (the session persists across container restarts).
+
+If you installed the CLI, you can also use `wx auth login`.
+
+### 4. Configure the channel
 
 Run the setup wizard:
 
@@ -83,13 +93,13 @@ Or edit `~/.openclaw/openclaw.json` directly:
 }
 ```
 
-## Run
+### 5. Run the gateway
 
 ```bash
 openclaw gateway run --verbose
 ```
 
-The WeChat monitor starts polling the agent-wechat server for new messages. Make sure the agent-wechat container is running (`wx up` / `wx status`).
+The WeChat monitor starts polling the agent-wechat server for new messages. Make sure the agent-wechat container is running.
 
 ## Configuration Reference
 

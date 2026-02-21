@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 
 const VERSION = "0.1.0";
 const CONTAINER_NAME = "agent-wechat";
+const GHCR_IMAGE = "ghcr.io/thisnick/agent-wechat";
 const DEFAULT_PORT = 6174;
 const VNC_PORT = 5900;
 
@@ -58,9 +59,7 @@ function getConfig(): Config {
 }
 
 function getImageTag(): string {
-  const arch = os.arch();
-  if (arch === "arm64") return "agent-wechat:arm64";
-  return "agent-wechat:amd64";
+  return `${GHCR_IMAGE}:latest`;
 }
 
 // Create program
@@ -782,13 +781,17 @@ async function cmdUp() {
     // No container found, continue to create
   }
 
-  // Check if image exists
+  // Check if image exists locally, pull if not
   try {
     execSync(`docker image inspect ${image}`, { stdio: "ignore" });
   } catch {
-    console.error(`Image ${image} not found.`);
-    console.error(`Run 'pnpm build:image' first to build the image.`);
-    process.exit(1);
+    console.log(`Image ${image} not found locally. Pulling...`);
+    try {
+      execSync(`docker pull ${image}`, { stdio: "inherit" });
+    } catch {
+      console.error(`Failed to pull ${image}. Check your internet connection and Docker setup.`);
+      process.exit(1);
+    }
   }
 
   // Ensure auth token exists
@@ -829,7 +832,7 @@ async function cmdUp() {
       await new Promise(r => setTimeout(r, 1000));
       process.stdout.write(".");
     }
-    console.log("\nServer did not become ready in time. Check logs with: pnpm cli logs");
+    console.log("\nServer did not become ready in time. Check logs with: wx logs");
   } catch (error) {
     console.error("Failed to start container:", error);
     process.exit(1);

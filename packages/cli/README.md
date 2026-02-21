@@ -13,7 +13,8 @@ This installs the `wx` command globally.
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) installed and running
-- An agent-wechat Docker image — pull from ghcr.io or build locally (see [Docker Image](#docker-image))
+
+`wx up` automatically pulls the Docker image from ghcr.io if it isn't found locally.
 
 > **Note:** agent-wechat requires `SYS_PTRACE` and `seccomp=unconfined` to interact with the WeChat desktop process. It cannot run in serverless or restricted container environments (AWS Fargate, Cloud Run, etc.). Use a VM or bare-metal Docker host.
 

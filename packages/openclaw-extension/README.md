@@ -1,47 +1,26 @@
-# OpenClaw WeChat Extension
+# @agent-wechat/wechat
 
 OpenClaw channel plugin for WeChat. Polls the agent-wechat REST API for inbound messages and dispatches replies through OpenClaw's agent runtime.
 
 ## Prerequisites
 
-- A running agent-wechat container (provides the REST API on port 6174)
-- OpenClaw installed and configured
+- **agent-wechat container** running and reachable (provides the REST API on port 6174). Install [`@agent-wechat/cli`](https://www.npmjs.com/package/@agent-wechat/cli) and run `wx up`, or use Docker Compose — see the [CLI docs](https://github.com/thisnick/agent-wechat/tree/main/packages/cli#running-the-container) for setup options.
+- **OpenClaw** installed and configured
 
-## Development Setup
+> **Note:** The agent-wechat container requires `SYS_PTRACE` and `seccomp=unconfined` (ptrace access to the WeChat desktop process). It cannot run in serverless or restricted container environments — use a VM or bare-metal Docker host.
 
-### 1. Build
-
-From the repo root:
+## Install
 
 ```bash
-pnpm install
-pnpm build
+openclaw plugins install @agent-wechat/wechat
 ```
 
-This builds the shared package, CLI, and bundles the extension into `dist/index.js` via esbuild.
+## Configure
 
-### 2. Deploy to OpenClaw
-
-```bash
-pnpm deploy:openclaw
-```
-
-This copies `dist/index.js`, `package.json`, and `openclaw.plugin.json` into `../openclaw/extensions/wechat/` (sibling to the agent-wechat repo). To deploy to a different location:
+Run the setup wizard:
 
 ```bash
-pnpm deploy:openclaw /path/to/openclaw/extensions/wechat
-```
-
-### 3. Enable the plugin
-
-```bash
-openclaw plugins enable wechat
-```
-
-### 4. Configure the channel
-
-```bash
-openclaw channels add --channel wechat --url http://localhost:6174
+openclaw channels setup wechat
 ```
 
 Or edit `~/.openclaw/openclaw.json` directly:
@@ -53,59 +32,17 @@ Or edit `~/.openclaw/openclaw.json` directly:
       "enabled": true,
       "serverUrl": "http://localhost:6174"
     }
-  },
-  "plugins": {
-    "entries": {
-      "wechat": { "enabled": true }
-    }
   }
 }
 ```
 
-### 5. Run the gateway
+## Run
 
 ```bash
 openclaw gateway run --verbose
 ```
 
-The WeChat monitor starts polling the agent-wechat server for new messages. Make sure the agent-wechat container is running (`pnpm cli up` / `pnpm cli status`).
-
-### Iterating
-
-After making changes to the extension source:
-
-```bash
-pnpm deploy:openclaw   # rebuilds + copies
-# restart the gateway
-```
-
-## Docker Setup
-
-The extension is bundled into a single `dist/index.js` with no runtime dependency on the shared package. Mount just the three required files:
-
-```bash
-mkdir -p /host/openclaw-ext/wechat/dist
-cp packages/openclaw-extension/dist/index.js    /host/openclaw-ext/wechat/dist/index.js
-cp packages/openclaw-extension/package.json     /host/openclaw-ext/wechat/package.json
-cp packages/openclaw-extension/openclaw.plugin.json /host/openclaw-ext/wechat/openclaw.plugin.json
-
-docker run \
-  -v /host/openclaw-ext/wechat:/app/extensions/wechat \
-  openclaw-image
-```
-
-Inside the container, configure `channels.wechat.serverUrl` to point at the agent-wechat server. If both containers are on the same Docker network:
-
-```json
-{
-  "channels": {
-    "wechat": {
-      "enabled": true,
-      "serverUrl": "http://agent-wechat:6174"
-    }
-  }
-}
-```
+The WeChat monitor starts polling the agent-wechat server for new messages. Make sure the agent-wechat container is running (`wx up` / `wx status`).
 
 ## Configuration Reference
 
@@ -122,6 +59,24 @@ All config lives under `channels.wechat` in OpenClaw's config file:
 | `groups` | object | `{}` | Per-group overrides (e.g. `{ "id@chatroom": { "requireMention": false } }`) |
 | `pollIntervalMs` | integer | `1000` | Message polling interval |
 | `authPollIntervalMs` | integer | `30000` | Auth status check interval |
+
+## Development
+
+### Build from source
+
+```bash
+git clone https://github.com/thisnick/agent-wechat.git
+cd agent-wechat
+pnpm install && pnpm build
+```
+
+### Link for local development
+
+```bash
+openclaw plugins install -l ./packages/openclaw-extension
+```
+
+This symlinks the extension so changes are picked up without reinstalling. Rebuild with `pnpm build` after making changes, then restart the gateway.
 
 ## Architecture
 

@@ -17,8 +17,8 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     outputs:
-      published: ${{ steps.changesets.outputs.published }}
-      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
+      published: ${{ steps.publish.outputs.published }}
+      publishedPackages: ${{ steps.publish.outputs.publishedPackages }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,21 +30,39 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
+      # npm >= 11.5.1 required for OIDC trusted publishing
+      - run: npm install -g npm@latest
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
 
-      - name: Create Release PR or Publish
+      - name: Create Release PR
         id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
-          publish: pnpm release
           title: "Version Packages"
           commit: "Version Packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Publish separately so npm can use OIDC (no NODE_AUTH_TOKEN needed)
+      - name: Publish to npm
+        id: publish
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: |
+          OUTPUT=$(pnpm changeset publish 2>&1) || true
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "New tag:"; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            PACKAGES=$(echo "$OUTPUT" | grep "New tag:" | sed 's/.*New tag: *//;s/@/ /' | jq -Rc 'split(" ") | {name: .[0], version: .[1]}' | jq -sc '.')
+            echo "publishedPackages=$PACKAGES" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "publishedPackages=[]" >> "$GITHUB_OUTPUT"
+          fi
+        env:
           NPM_CONFIG_PROVENANCE: true
 
   publish-docker:

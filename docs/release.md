@@ -33,10 +33,20 @@ Docker tags:
 - `<version>` (e.g., `0.2.0`)
 - `latest`
 
-## Trusted Publishing
+## Trusted Publishing (OIDC)
 
-Configure npm trusted publishers for both packages to this repo/workflow.
+npm trusted publishing lets GitHub Actions publish without a long-lived token. Setup:
 
-No npm access token is required once trusted publishing is configured.
+1. Go to https://www.npmjs.com/package/@agent-wechat/cli/access
+2. Under "Trusted publishers", add GitHub Actions:
+   - **Owner**: `thisnick`
+   - **Repository**: `agent-wechat`
+   - **Workflow**: `release.yml`
+   - **Environment**: (leave blank)
+3. Repeat for https://www.npmjs.com/package/@agent-wechat/wechat/access
+
+Once configured, delete the `NPM_TOKEN` secret from GitHub repo settings. The workflow uses OIDC automatically (requires npm >= 11.5.1, installed in CI).
+
+**Note**: Trusted publishing can only be configured for packages that already exist on npm. For brand-new packages, the first publish must use a token.
 
 If you need a different GHCR path, update the image name in `.github/workflows/release.yml`.

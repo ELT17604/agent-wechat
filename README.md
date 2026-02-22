@@ -70,15 +70,15 @@ wx down
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                Docker Container                      │
-│                                                      │
+│                Docker Container                     │
+│                                                     │
 │   WeChat Linux  ←──  Xvfb + AT-SPI (accessibility)  │
-│        ↕                                             │
-│   agent-server (Rust/Axum, port 6174)                │
-│     - FSM engine for UI automation                   │
-│     - Direct WeChat DB reads for chat data           │
-│     - REST + WebSocket API                           │
-└──────────────────────┬───────────────────────────────┘
+│        ↕                                            │
+│   agent-server (Rust/Axum, port 6174)               │
+│     - FSM engine for UI automation                  │
+│     - Direct WeChat DB reads for chat data          │
+│     - REST + WebSocket API                          │
+└──────────────────────┬──────────────────────────────┘
                        │ HTTP / WebSocket
                        ↓
                CLI or AI agent

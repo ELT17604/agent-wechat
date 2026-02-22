@@ -98,18 +98,33 @@ wx up    # auto-pulls ghcr.io/thisnick/agent-wechat
 
 **Option B: Docker Compose** (for custom networking)
 
+See [`docker-compose.yml`](./docker-compose.yml) for a full example. Key points:
+
 ```yaml
+# Generate a token first:
+#   mkdir -p ~/.config/agent-wechat
+#   openssl rand -hex 32 > ~/.config/agent-wechat/token
+#   chmod 600 ~/.config/agent-wechat/token
+
 services:
   agent-wechat:
     image: ghcr.io/thisnick/agent-wechat:latest
-    cap_add: [SYS_PTRACE]
+    security_opt:
+      - seccomp=unconfined
+    cap_add:
+      - SYS_PTRACE
     ports:
       - "6174:6174"
-      - "5900:5900"
+      - "127.0.0.1:5900:5900"  # VNC localhost-only
     volumes:
       - agent-wechat-data:/data
+      - agent-wechat-home:/home/wechat
+      - ~/.config/agent-wechat/token:/data/auth-token:ro
+    restart: unless-stopped
+
 volumes:
   agent-wechat-data:
+  agent-wechat-home:
 ```
 
 ## Development

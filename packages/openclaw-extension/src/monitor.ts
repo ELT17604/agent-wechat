@@ -31,6 +31,7 @@ type ProcessedMessage = {
   isGroup: boolean;
   timestamp: number;
   hasMedia: boolean;
+  isMentioned: boolean;
 };
 
 /** Official/service accounts have IDs starting with gh_ */
@@ -375,6 +376,7 @@ async function prepareMessage(
     isGroup,
     timestamp,
     hasMedia,
+    isMentioned: isGroup && (msg.isMentioned === true),
   };
 }
 
@@ -432,6 +434,20 @@ async function dispatchSegment(
     `[wechat:${liveAccount.accountId}] Dispatching segment: ${segment.length} msg(s), last=${msg.localId}` +
     `${mediaPath ? ` media=${mediaPath}` : ""}`,
   );
+
+  // Mention gating: skip group messages that require mention but weren't mentioned
+  if (isGroup) {
+    const wechatCfg = (cfg as any)?.channels?.wechat;
+    const groupEntry = wechatCfg?.groups?.[chatId];
+    const defaultEntry = wechatCfg?.groups?.["*"];
+    const requireMention = groupEntry?.requireMention ?? defaultEntry?.requireMention ?? true;
+    if (requireMention && !lastMsg.isMentioned) {
+      log?.info?.(
+        `[wechat:${liveAccount.accountId}] Skipping group message (mention required, not mentioned) in ${chatId}`,
+      );
+      return;
+    }
+  }
 
   try {
     // Resolve routing using the last (triggering) message
@@ -541,6 +557,7 @@ async function dispatchSegment(
       Provider: "wechat",
       Surface: "wechat",
       MessageSid: `wechat:${chatId}:${msg.localId}`,
+      WasMentioned: isGroup ? lastMsg.isMentioned : undefined,
       OriginatingChannel: "wechat",
       OriginatingTo: `wechat:${chatId}`,
       ...(mediaPath ? { MediaPath: mediaPath, MediaUrl: mediaPath, MediaType: mediaMime } : {}),

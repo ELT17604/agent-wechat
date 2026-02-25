@@ -804,18 +804,22 @@ async function cmdUpdate() {
   const assetName = `agent-server-${version}-linux-${arch}`;
   const tmpFile = path.join(os.tmpdir(), assetName);
 
-  // Download binary from GitHub Releases
+  // Download binary from GitHub Releases (no gh CLI dependency)
+  const releaseUrl = `https://github.com/thisnick/agent-wechat/releases/download/v${version}/${assetName}`;
   console.log(`Downloading ${assetName}...`);
   try {
-    execSync(
-      `gh release download "v${version}" --repo thisnick/agent-wechat -p "${assetName}" -D "${os.tmpdir()}" --clobber`,
-      { stdio: "inherit" }
-    );
-  } catch {
+    const resp = await fetch(releaseUrl, { redirect: "follow" });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    }
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    fs.writeFileSync(tmpFile, buffer, { mode: 0o755 });
+  } catch (err) {
     console.error(
       `Failed to download ${assetName} from GitHub Releases.\n` +
       `Make sure v${version} has been released with binary assets.\n` +
-      `You may need to install the GitHub CLI: https://cli.github.com`
+      `URL: ${releaseUrl}\n` +
+      `Error: ${err instanceof Error ? err.message : String(err)}`
     );
     process.exit(1);
   }
@@ -823,6 +827,9 @@ async function cmdUpdate() {
   // Deploy into container
   console.log(`Deploying to ${container}...`);
   execSync(`docker cp "${tmpFile}" "${container}:/opt/agent-server/agent-server"`, {
+    stdio: "inherit",
+  });
+  execSync(`docker exec "${container}" chmod +x /opt/agent-server/agent-server`, {
     stdio: "inherit",
   });
 

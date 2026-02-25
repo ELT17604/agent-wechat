@@ -795,23 +795,11 @@ async function cmdUpdate() {
   }
 
   // Detect container architecture
-  let arch: string;
-  const containerArch = execSync(
-    `docker inspect --format "{{.Architecture}}" "${container}"`,
+  const uname = execSync(
+    `docker exec "${container}" uname -m`,
     { encoding: "utf-8" }
   ).trim();
-  switch (containerArch) {
-    case "amd64":
-      arch = "amd64";
-      break;
-    case "arm64":
-      arch = "arm64";
-      break;
-    default:
-      // Fallback to host arch
-      const uname = execSync("uname -m", { encoding: "utf-8" }).trim();
-      arch = uname === "x86_64" ? "amd64" : "arm64";
-  }
+  const arch = uname === "x86_64" ? "amd64" : "arm64";
 
   const assetName = `agent-server-${version}-linux-${arch}`;
   const tmpFile = path.join(os.tmpdir(), assetName);

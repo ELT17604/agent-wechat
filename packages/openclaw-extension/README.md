@@ -79,7 +79,10 @@ If you installed the CLI, you can also use `wx auth login`.
 ### 4. Configure the channel
 
 ```bash
+# Uses defaults (localhost:6174, token from ~/.config/agent-wechat/token)
 openclaw channels add --channel wechat
+
+# Override server URL and token
 openclaw channels add --channel wechat --url <url> --token <token>
 ```
 

@@ -40,8 +40,8 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test
-        run: pnpm --filter @agent-wechat/wechaty-puppet test
+      - name: Test (all packages)
+        run: pnpm -r --if-present test
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

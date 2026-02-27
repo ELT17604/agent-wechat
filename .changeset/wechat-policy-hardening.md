@@ -1,3 +1,4 @@
+---
 "@agent-wechat/wechat": patch
 ---
 

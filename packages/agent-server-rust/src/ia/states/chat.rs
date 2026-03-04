@@ -1,4 +1,4 @@
-use crate::ia::helpers::{extract_active_chat_id, find_main_frame_hint};
+use crate::ia::helpers::{extract_active_chat_id, find_frame_for};
 use crate::ia::selectors::query_selector;
 use crate::ia::types::*;
 use super::base::extract_window_control_bounds;
@@ -72,7 +72,7 @@ impl IAState for ChatState {
         if find_selected_chat_item(args.a11y).is_some() {
             return Ok(IdentifyResult { identified: false, frame: None });
         }
-        Ok(IdentifyResult { identified: true, frame: find_main_frame_hint(args.a11y) })
+        Ok(IdentifyResult { identified: true, frame: find_frame_for(args.a11y, r#"list[name="Chats"]"#) })
     }
 
     fn reduce(&self, args: &ReduceArgs) -> AppState {
@@ -105,7 +105,7 @@ impl IAState for ChatOpenState {
         if find_selected_chat_item(args.a11y).is_none() {
             return Ok(IdentifyResult { identified: false, frame: None });
         }
-        Ok(IdentifyResult { identified: true, frame: find_main_frame_hint(args.a11y) })
+        Ok(IdentifyResult { identified: true, frame: find_frame_for(args.a11y, r#"list[name="Chats"]"#) })
     }
 
     fn reduce(&self, args: &ReduceArgs) -> AppState {

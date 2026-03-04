@@ -1,4 +1,4 @@
-use crate::ia::helpers::find_main_frame_hint;
+use crate::ia::helpers::find_frame_for;
 use crate::ia::selectors::{query_selector};
 use crate::ia::types::*;
 use crate::tools::qr::decode_qr_from_base64;
@@ -28,7 +28,7 @@ impl IAState for LoginQrState {
             return Ok(IdentifyResult { identified: false, frame: None });
         }
 
-        Ok(IdentifyResult { identified: true, frame: find_main_frame_hint(args.a11y) })
+        Ok(IdentifyResult { identified: true, frame: find_frame_for(args.a11y, r#"label[name*="Scan to log in"]"#) })
     }
 
     fn reduce(&self, args: &ReduceArgs) -> AppState {
@@ -69,7 +69,7 @@ impl IAState for LoginAccountState {
             return Ok(IdentifyResult { identified: false, frame: None });
         }
 
-        Ok(IdentifyResult { identified: true, frame: find_main_frame_hint(args.a11y) })
+        Ok(IdentifyResult { identified: true, frame: find_frame_for(args.a11y, r#"push-button[name="Switch Account"]"#) })
     }
 
     fn reduce(&self, args: &ReduceArgs) -> AppState {
@@ -97,7 +97,7 @@ impl IAState for LoginPhoneConfirmState {
         let confirm = query_selector(args.a11y, r#"label[name=/Comfirm on phone|Confirm.*phone|手机确认/i]"#);
         Ok(IdentifyResult {
             identified: confirm.is_some(),
-            frame: if confirm.is_some() { find_main_frame_hint(args.a11y) } else { None },
+            frame: if confirm.is_some() { find_frame_for(args.a11y, r#"label[name=/Comfirm on phone|Confirm.*phone|手机确认/i]"#) } else { None },
         })
     }
 
@@ -119,10 +119,10 @@ impl IAState for LoginLoadingState {
     fn identify(&self, args: &IdentifyArgs) -> Result<IdentifyResult, String> {
         // Case 1: "Entering" or "Loading X%" labels
         if query_selector(args.a11y, r#"label[name="Entering"]"#).is_some() {
-            return Ok(IdentifyResult { identified: true, frame: find_main_frame_hint(args.a11y) });
+            return Ok(IdentifyResult { identified: true, frame: find_frame_for(args.a11y, r#"label[name="Entering"]"#) });
         }
         if query_selector(args.a11y, r#"label[name*="Loading"]"#).is_some() {
-            return Ok(IdentifyResult { identified: true, frame: find_main_frame_hint(args.a11y) });
+            return Ok(IdentifyResult { identified: true, frame: find_frame_for(args.a11y, r#"label[name*="Loading"]"#) });
         }
 
         // Case 2: Nav buttons but no Chats list
@@ -132,7 +132,7 @@ impl IAState for LoginLoadingState {
         let has_chats = query_selector(args.a11y, r#"list[name="Chats"]"#).is_some();
 
         if main_btn.is_some() && has_contacts && !has_chats {
-            return Ok(IdentifyResult { identified: true, frame: find_main_frame_hint(args.a11y) });
+            return Ok(IdentifyResult { identified: true, frame: find_frame_for(args.a11y, r#"push-button[name="Contacts"]"#) });
         }
 
         Ok(IdentifyResult { identified: false, frame: None })
@@ -159,7 +159,7 @@ impl IAState for NetworkProxySettingsState {
         let identified = title.is_some() && checkbox.is_some();
         Ok(IdentifyResult {
             identified,
-            frame: if identified { find_main_frame_hint(args.a11y) } else { None },
+            frame: if identified { find_frame_for(args.a11y, r#"label[name="Network proxy settings"]"#) } else { None },
         })
     }
 

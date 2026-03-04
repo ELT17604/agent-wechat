@@ -46,9 +46,28 @@ pub fn frame_hint_from_node(node: &A11yNode) -> Option<FrameHint> {
     })
 }
 
-/// Find the main WeChat frame and return a FrameHint.
-pub fn find_main_frame_hint(a11y: &A11yNode) -> Option<FrameHint> {
-    let frame = query_selector(a11y, r#"frame[name="WeChat"]"#)
-        .or_else(|| query_selector(a11y, r#"frame[name="微信"]"#));
-    frame.and_then(|f| frame_hint_from_node(f))
+/// Find the innermost frame ancestor that contains a node matching `selector`.
+/// Walks the tree top-down, preferring deeper frames so we get the tightest
+/// enclosing frame (e.g. "Settings" frame, not the root desktop-frame).
+pub fn find_frame_for(a11y: &A11yNode, selector: &str) -> Option<FrameHint> {
+    fn walk<'a>(node: &'a A11yNode, selector: &str, current_frame: Option<&'a A11yNode>) -> Option<&'a A11yNode> {
+        let frame = if node.role == "frame" { Some(node) } else { current_frame };
+
+        // If this subtree contains the target, the deepest frame wins
+        if query_selector(node, selector).is_some() {
+            // Check children for a tighter frame
+            if let Some(children) = &node.children {
+                for child in children {
+                    if let Some(deeper) = walk(child, selector, frame) {
+                        return Some(deeper);
+                    }
+                }
+            }
+            // No deeper frame found — return current
+            return frame;
+        }
+        None
+    }
+    walk(a11y, selector, None).and_then(frame_hint_from_node)
 }
+

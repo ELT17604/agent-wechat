@@ -12,7 +12,36 @@ on:
       - '.github/workflows/ci.yml'
 
 jobs:
-  build-and-check:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ts: ${{ steps.filter.outputs.ts }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ts:
+              - 'packages/cli/**'
+              - 'packages/shared/**'
+              - 'packages/openclaw-extension/**'
+              - 'packages/wechaty-gateway/**'
+              - 'packages/wechaty-puppet/**'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.json'
+              - '.github/workflows/ci.yml'
+            rust:
+              - 'packages/agent-server-rust/**'
+              - '.github/workflows/ci.yml'
+
+  ts:
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -43,8 +72,21 @@ jobs:
       - name: Test (all packages)
         run: pnpm -r --if-present test
 
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo check
         run: cargo check --manifest-path packages/agent-server-rust/Cargo.toml
+
+      - name: Cargo test
+        run: cargo test --manifest-path packages/agent-server-rust/Cargo.toml

@@ -1,5 +1,4 @@
 ---
-"agent-server": patch
 "@agent-wechat/cli": patch
 ---
 

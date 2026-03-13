@@ -3,7 +3,11 @@ title: Quick Start
 description: Get agent-wechat running in under 5 minutes.
 ---
 
-The fastest way to get started is with the CLI.
+The fastest way to get started is with the CLI. If you'd rather not manage infrastructure yourself, see [Managed Hosting](/hosting/managed-hosting).
+
+:::note[Prerequisites]
+You need **Docker** running on your machine. On macOS, install [Colima](https://github.com/abiosoft/colima) (`brew install colima && colima start`) or [Docker Desktop](https://www.docker.com/products/docker-desktop/). On Linux, install [Docker Engine](https://docs.docker.com/engine/install/).
+:::
 
 ## 1. Install the CLI
 
@@ -30,7 +34,7 @@ wx auth login
 A QR code is displayed in your terminal. Scan it with WeChat on your phone (tap **+** > **Scan**), then confirm the login.
 
 :::tip
-You only need to scan the QR code once. The session persists across container restarts.
+Scan the QR code in WeChat if prompted.
 :::
 
 ## 4. Interact with WeChat
@@ -42,16 +46,25 @@ wx chats list
 # Find a chat by name
 wx chats find "John"
 
-# Send a message
+# Send a message (--text, --image, or --file)
 wx messages send <chatId> --text "Hello from agent-wechat!"
+wx messages send <chatId> --image photo.jpg
+wx messages send <chatId> --file document.pdf
 
 # Read messages
 wx messages list <chatId>
+
+# Download media (images, voice, video) from a message
+wx messages media <chatId> <messageId>
 ```
 
 ## 5. View the container via VNC
 
-Open your browser to `http://localhost:6174/vnc/` to see the WeChat desktop UI running inside the container.
+Open your browser to `http://localhost:6174/vnc/` to see the WeChat desktop UI running inside the container. You'll be prompted for the auth token — find it with:
+
+```bash
+cat ~/.config/agent-wechat/token
+```
 
 ## 6. Stop the container
 
@@ -61,7 +74,7 @@ wx down
 
 ## Next steps
 
+- [OpenClaw integration](/integrations/openclaw/setup) — add WeChat as a channel in your OpenClaw AI agent
+- [Wechaty integration](/integrations/wechaty/puppet-setup) — connect existing Wechaty bots to WeChat
 - [CLI commands reference](/getting-started/cli/commands) — full list of everything the `wx` command can do
 - [Docker Compose setup](/getting-started/container-setup/docker-compose) — for production or networked deployments
-- [OpenClaw integration](/integrations/openclaw/setup) — connect an AI agent to WeChat
-- [Wechaty integration](/integrations/wechaty/puppet-setup) — use existing Wechaty bots

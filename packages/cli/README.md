@@ -2,6 +2,8 @@
 
 Command-line tool for managing agent-wechat containers and interacting with WeChat.
 
+**[Documentation](https://thisnick.github.io/agent-wechat/getting-started/cli/commands/)**
+
 ## Install
 
 ```bash

@@ -2,6 +2,8 @@
 
 OpenClaw channel plugin for WeChat. Connects your OpenClaw bot to WeChat using [agent-wechat](https://github.com/thisnick/agent-wechat).
 
+**[Documentation](https://thisnick.github.io/agent-wechat/integrations/openclaw/setup/)**
+
 ## Prerequisites
 
 - **A WeChat account logged in on your phone** — This account will be used by the bot. You must keep it logged in on your phone at all times. If you log out on the phone, the bot loses its connection.

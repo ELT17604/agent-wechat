@@ -26,7 +26,7 @@ docker compose up -d
 
 ## What happens on restart
 
-- The WeChat session **usually persists** across restarts — you won't need to scan the QR code again.
+- The WeChat session usually persists across restarts. Scan the QR code in WeChat if prompted.
 - If the session does expire, the API will report a logged-out status. Run `wx auth login` or ask your OpenClaw bot to log in again.
 - The agent database (`/data/agent.db`) persists across restarts.
 - All WeChat data (messages, contacts, media) persists in the `agent-wechat-home` volume.

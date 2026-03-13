@@ -1,14 +1,23 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import { remarkBasePath } from './remark-base-path.mjs';
+
+const base = '/agent-wechat';
 
 export default defineConfig({
+  site: 'https://thisnick.github.io',
+  base,
+  markdown: {
+    remarkPlugins: [remarkBasePath(base)],
+  },
   integrations: [
     starlight({
       title: 'agent-wechat',
       description: 'A programmable WeChat interface for AI agents and automation.',
-      social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/thisnick/agent-wechat' },
-      ],
+      customCss: ['./src/styles/custom.css'],
+      social: {
+        github: 'https://github.com/thisnick/agent-wechat',
+      },
       sidebar: [
         {
           label: 'Getting Started',

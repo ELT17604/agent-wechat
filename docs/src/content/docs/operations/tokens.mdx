@@ -15,13 +15,19 @@ agent-wechat uses a simple token-based authentication to secure the REST API.
 
 ## How the token is used
 
-Every API request must include the token in the `Authorization` header:
+The token serves two purposes:
 
-```
-Authorization: Bearer <token>
-```
+1. **API authentication** — every API request must include it in the `Authorization` header:
+   ```
+   Authorization: Bearer <token>
+   ```
+2. **Database encryption** — the token is used to encrypt `agent.db`, the internal database that stores session state and metadata.
 
 The CLI, OpenClaw plugin, and Wechaty puppet all read the token automatically from `~/.config/agent-wechat/token` when connecting to `localhost`.
+
+:::caution
+Changing or losing the token means `agent.db` can no longer be read. If you regenerate the token, the old database is effectively lost and a new one will be created.
+:::
 
 ## Generating a token manually
 

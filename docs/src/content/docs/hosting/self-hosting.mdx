@@ -15,7 +15,7 @@ The simplest production setup is a VPS with Docker:
 
 - The auth token secures the API. Keep it secret and use HTTPS if exposing the port externally.
 - The container runs with elevated privileges (`SYS_PTRACE`, `seccomp=unconfined`). Run it on a dedicated VM or isolated Docker host.
-- Do not expose port 6174 to the public internet without authentication. The auth token is required for API access, but the VNC viewer at `/vnc/` may be accessible without it.
+- Use HTTPS if exposing port 6174 externally. Both the API and VNC viewer at `/vnc/` require the auth token.
 
 ## Monitoring
 
@@ -63,4 +63,4 @@ docker pull ghcr.io/thisnick/agent-wechat:latest
 wx up
 ```
 
-After updating, the WeChat session usually persists. If it doesn't, scan the QR code again.
+After updating, the WeChat session usually persists. Scan the QR code in WeChat if prompted.

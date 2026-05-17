@@ -30,8 +30,20 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      # npm >= 11 required for OIDC trusted publishing
-      - run: npm install -g npm@11.12.1
+      # npm >= 11.5 required for OIDC trusted publishing. Skip the install when
+      # the runner image already ships a compatible npm, since self-install on
+      # Node 22.22.2's bundled npm fails with MODULE_NOT_FOUND: 'promise-retry'.
+      - name: Ensure npm >= 11.5 for OIDC trusted publishing
+        run: |
+          CURRENT=$(npm --version)
+          REQUIRED=11.5.0
+          if [ "$(printf '%s\n%s\n' "$REQUIRED" "$CURRENT" | sort -V | head -1)" = "$REQUIRED" ]; then
+            echo "npm $CURRENT is sufficient (>= $REQUIRED), skipping upgrade"
+          else
+            echo "Upgrading npm $CURRENT -> 11.12.1"
+            npm install -g npm@11.12.1
+          fi
+          echo "Active npm: $(npm --version)"
 
       - run: pnpm install --frozen-lockfile
 

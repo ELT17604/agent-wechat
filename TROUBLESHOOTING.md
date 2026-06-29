@@ -114,3 +114,29 @@ docker load -i /tmp/agent-wechat.tar
 ```
 
 See also: [Hosting guide](https://thisnick.github.io/agent-wechat/guides/hosting/)
+
+## npm Install Fails: @agent-wechat/shared Not Published
+
+### Symptoms
+```
+npm install @agent-wechat/wechat
+# or
+openclaw plugins install @agent-wechat/wechat
+
+# Plugin installs but runtime fails silently
+# Gateway logs show plugin not in auto-discover list
+```
+
+### Cause
+`@agent-wechat/shared@0.1.0` is listed as a dependency in the plugin's
+`package.json` but is not published on the npm registry. This is a monorepo
+internal package shared between the CLI and OpenClaw plugin.
+
+### Workaround
+The current npm package (v0.11.15) bundles the WeChatClient class from
+`@agent-wechat/shared` inside the built `dist/index.js`. If the bundled
+code is sufficient, the plugin may still work for basic operations.
+Full resolution requires publishing `@agent-wechat/shared` to npm.
+
+### Related
+- GitHub Issue #156: "npm install fails: @agent-wechat/shared@0.1.0 not published"

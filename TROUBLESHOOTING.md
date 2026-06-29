@@ -146,7 +146,7 @@ Full resolution requires publishing `@agent-wechat/shared` to npm.
 ### Problem
 WeChat forwarded chat records (type 49 appmsg) show only the title in the API:
 ```json
-{"content": "нал和烨的聊天记录", "type": 49}
+{"content": "Chat History", "type": 49}
 ```
 The actual forwarded messages are not exposed via REST API or AT-SPI.
 
@@ -158,8 +158,7 @@ detect the window frame (550×410) but cannot read individual message texts.
 
 #### Multi-modal Vision API ⚠️
 Works but slow (30s+) and incurs API costs. Screenshot + doubao-vision
-successfully extracted: "国内docker真的完全被墙", "镜像站都没几个存活的",
-"我真服了", "神经吧".
+successfully extracted example forwarded messages (Chinese text).
 
 #### Local Tesseract OCR ✅ (Recommended)
 ```

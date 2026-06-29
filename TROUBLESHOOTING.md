@@ -140,3 +140,50 @@ Full resolution requires publishing `@agent-wechat/shared` to npm.
 
 ### Related
 - GitHub Issue #156: "npm install fails: @agent-wechat/shared@0.1.0 not published"
+
+## Forwarded Chat Records (Type 49) — Content Extraction
+
+### Problem
+WeChat forwarded chat records (type 49 appmsg) show only the title in the API:
+```json
+{"content": "нал和烨的聊天记录", "type": 49}
+```
+The actual forwarded messages are not exposed via REST API or AT-SPI.
+
+### Approaches Investigated
+
+#### AT-SPI Direct Read ❌
+The forwarded chat detail window uses custom-drawn widgets. AT-SPI can
+detect the window frame (550×410) but cannot read individual message texts.
+
+#### Multi-modal Vision API ⚠️
+Works but slow (30s+) and incurs API costs. Screenshot + doubao-vision
+successfully extracted: "国内docker真的完全被墙", "镜像站都没几个存活的",
+"我真服了", "神经吧".
+
+#### Local Tesseract OCR ✅ (Recommended)
+```
+Screenshot → Crop forwarded window → Tesseract (chi_sim+eng) → 1-2s → Free
+```
+Verified on Ubuntu 22.04 with `tesseract-ocr-chi-sim`. Successfully reads
+Chinese text from WeChat chat list UI.
+
+### Current Blocker: WeChat 4.1.1 Version Dialog
+WeChat 4.1.1 displays a mandatory version changelog dialog on startup:
+```
+[WeChat 4.1.1]
+- Added chat history import/export;
+- Fixed some known issues.
+```
+- AT-SPI shows: `label "WeChat 4.1.1"`, `push-button "Disable"`
+- Cannot be dismissed via xdotool key Escape/Return/Space
+- Clicking "Disable" does not close it
+- The dialog overlays the chat window, blocking OCR of forwarded messages
+
+### Workaround
+- Wait for user to manually dismiss the dialog on first login
+- Or investigate WeChat command-line flags to suppress the changelog
+- TODO: Find WeChat startup flag to disable update notifications
+
+### Related
+- GitHub Issue #153: "Execution engine stalls after login"

@@ -236,11 +236,18 @@ wx auth logout         # 登出
 ### 解锁
 
 ```bash
-# 方法A：手机微信 → 顶部状态栏 → 解锁（最可靠）
-# 方法B：点按钮触发手机通知
+# 方法A：手机上解锁（推荐）
+# 手机微信 → 聊天列表顶部状态栏 → 点击「Windows/Mac 微信已锁定」→ 解锁
+# ✅ 解锁后直接回到聊天界面，无需重新登录
+
+# 方法B：Docker 内点击按钮触发手机通知
 docker exec agent-wechat click 640 490
 docker exec agent-wechat xdotool mousemove 640 490 click 1
+# 仍需在手机上确认解锁
+# ✅ 解锁后直接回到聊天界面，无需重新登录
 ```
+
+> ⚠️ **踩坑：** 解锁流程本身不会导致微信登出。如果解锁后发现退到登录界面，请确认**不是之前误调用了 `logout` API 或 `wx auth logout`**。
 
 ### 版本弹窗处理
 

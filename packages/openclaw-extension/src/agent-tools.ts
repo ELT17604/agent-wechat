@@ -145,7 +145,7 @@ export function createWeChatPreviewTool(account: ResolvedWeChatAccount) {
             parts.push(`   [${m.localId}] ${sender}: ${(m.content || "[非文本]").slice(0, 100)}`);
           }
         } else {
-          parts.push(`📜 无历史消息`);
+          parts.push(`📜 最近消息: null（该聊天无历史记录）`);
         }
       } catch {
         parts.push(`📜 无法获取历史消息`);
@@ -294,7 +294,7 @@ export function createWeChatReadTool(account: ResolvedWeChatAccount) {
         const msgs = await client.listMessages(chatId, limit, offset);
 
         if (msgs.length === 0) {
-          return { content: [{ type: "text" as const, text: `📜 ${chatId} 无消息记录。` }], details: { messages: [] } };
+          return { content: [{ type: "text" as const, text: `📜 ${chatId} 无消息记录 (null)。` }], details: { messages: [] } };
         }
 
         const lines: string[] = [];

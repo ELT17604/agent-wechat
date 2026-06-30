@@ -10,7 +10,16 @@ import { collectWeChatStatusIssues } from "./status.js";
 import { WeChatClient } from "@agent-wechat/shared";
 import { loginStart, loginWait, loginTerminal } from "./login.js";
 // loginWait still used by gateway.loginWithQrWait
-import { createWeChatLoginTool, createWeChatPreviewTool, createWeChatSendTool } from "./agent-tools.js";
+import {
+  createWeChatLoginTool,
+  createWeChatPreviewTool,
+  createWeChatSendTool,
+  createWeChatListChatsTool,
+  createWeChatReadTool,
+  createWeChatScreenshotTool,
+  createWeChatA11yTool,
+  createWeChatUnlockTool,
+} from "./agent-tools.js";
 import { normalizeWeChatCommandBody, normalizeWeChatId } from "./access-control.js";
 
 async function sendWeChatText(cfg: unknown, to: string, text: string): Promise<string> {
@@ -420,6 +429,11 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       createWeChatLoginTool(account),
       createWeChatPreviewTool(account),
       createWeChatSendTool(account),
+      createWeChatListChatsTool(account),
+      createWeChatReadTool(account),
+      createWeChatScreenshotTool(account),
+      createWeChatA11yTool(account),
+      createWeChatUnlockTool(account),
     ];
   }) as any,
 
